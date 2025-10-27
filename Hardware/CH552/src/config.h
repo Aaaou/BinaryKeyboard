@@ -2,10 +2,17 @@
 #define __CONFIG_H__
 
 // 基础款
+<<<<<<< HEAD
 #define USE_BASIC
 
 // 旋钮款
 // #define USE_KNOB
+=======
+// #define USE_BASIC
+
+// 旋钮款
+#define USE_KNOB
+>>>>>>> 044abfe (fix:修复编码器的初始化 待修复:鼠标长按的问题)
 
 //五键款
 //#define USE_5KEYS
