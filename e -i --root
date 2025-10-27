@@ -1,0 +1,270 @@
+[33mcommit 1218010dde4fb230a33a5cdfba9bbc52b2d70426[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfix-key[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/fix-key[m[33m, [m[1;32mmain[m[33m)[m
+Merge: a43d6c5 0901cdf
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 17:13:38 2025 +0800
+
+    合并fix-key分支（包含不同历史）
+
+[33mcommit 0901cdf8d8ae1bdc04f7708d9a5affb1f4dc5fd0[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 16:36:42 2025 +0800
+
+    fix: 修复编码器和鼠标定义问题
+
+[33mcommit 9b2d633b17f4026ceab1e26ee9550603d518179e[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 16:15:20 2025 +0800
+
+    chore：适配pr配置
+
+[33mcommit 8af4586e553ff487c5e6119539f35d86c7c7c90a[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 16:01:02 2025 +0800
+
+    fix:修复编码器和鼠标定义相关问题，已验证编码器和普通版本
+
+[33mcommit d1859ddc4d2125e561677bc200d2762b4c67d642[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 15:18:55 2025 +0800
+
+    fix:修复鼠标类型长按和滚轮联动的一些问题
+
+[33mcommit 86ffeeaf915858b6c43c6269702e6b5110349e59[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 10:38:05 2025 +0800
+
+    fix:修复编码器的初始化
+
+[33mcommit a43d6c560fb0b11ad0add8c1de169f1916670d9b[m
+Merge: 7bd8ef4 e4ed9d1
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 16:30:15 2025 +0800
+
+    chore：适配pr配置
+
+[33mcommit 7bd8ef4f2e5f7521bc92a8b2b6d87378d696ebce[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 16:01:02 2025 +0800
+
+    fix:修复编码器和鼠标定义相关问题，已验证编码器和普通版本
+
+[33mcommit f223c409202a3cdaec53db88bd221db6c9ff5668[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 15:18:55 2025 +0800
+
+    fix:修复鼠标类型长按和滚轮联动的一些问题
+
+[33mcommit 044abfe3ce5da534c975025d0e1b9615304a6a9b[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Mon Oct 27 10:38:05 2025 +0800
+
+    fix:修复编码器的初始化 待修复:鼠标长按的问题
+
+[33mcommit e4ed9d1b282d4fc3753fd6a486e9feeb22fdcfd2[m[33m ([m[1;31mupstream/classic-keyboard[m[33m, [m[1;31mupstream/HEAD[m[33m)[m
+Author: PasMeow <ijink@icloud.com>
+Date:   Mon Oct 13 20:42:31 2025 +0800
+
+    feat(未测试)✨: 初步整合了rgb代码，编译无错误，未测试。
+
+[33mcommit 817099fa6185500e94ee58df1ca6242c207966bc[m
+Merge: d047e2e 05cd412
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Wed Sep 3 22:07:45 2025 +0800
+
+    Merge pull request #2 from Aaaou/main
+    
+    更新6键无冲突，更新RGB6灯光，fun按键触发
+
+[33mcommit 05cd41281711292d216e1dc1e989c87820865c7c[m
+Author: Aaaou <2832766481@qq.com>
+Date:   Thu Aug 14 15:06:37 2025 +0800
+
+    更新6键无冲突，更新RGB6灯光，fun按键触发
+
+[33mcommit d047e2e1f021cab3be2191ac0ce78589d340d403[m
+Author: KJ <ijink@icloud.com>
+Date:   Mon Mar 10 17:20:37 2025 +0800
+
+    feat✨: 更新首页标题为“BinaryKeyboard按键映射修改”，增加favicon.ico
+
+[33mcommit bc17042a75342f62a3231887953719e88d3312e5[m
+Author: KJ <ijink@icloud.com>
+Date:   Mon Mar 10 16:46:57 2025 +0800
+
+    feat✨: 优化旋钮按钮组件，增加表示方向的图标
+
+[33mcommit 4719ae3e43af883a6ccc9a0e4ce46b048a9e1963[m
+Merge: 3f879d0 4d16c89
+Author: KJ <ijink@icloud.com>
+Date:   Mon Mar 10 16:21:02 2025 +0800
+
+    Merge branch 'main' of https://github.com/MeowKJ/BinaryKeyboard
+
+[33mcommit 3f879d0d24245c0866ff9f3b4e9833127b2b055a[m
+Author: KJ <ijink@icloud.com>
+Date:   Mon Mar 10 16:20:59 2025 +0800
+
+    feat✨: 更新USB报告描述符，增加侧键支持并调整按钮数量固件更新到(0x09)
+
+[33mcommit 4d16c893180c8f2e8a5c9df9e2a95ba94e391367[m
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Sun Mar 9 21:48:39 2025 +0800
+
+    Update README.md
+
+[33mcommit c7d0e15bdb78b3ccd241970b72a2924d6ff5435e[m[33m ([m[1;33mtag: [m[1;33mv2.0-alpha[m[33m)[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 21:27:17 2025 +0800
+
+    feat✨:
+
+[33mcommit 1429c2ce7f72d8ae55d246ac90515c2e54cecc86[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 15:50:14 2025 +0800
+
+    feat✨: 更新按键处理逻辑，优化编码器事件处理，添加配置文件支持
+
+[33mcommit 01ec440748ab3c5231108c1819f6299cfc1e421b[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 12:40:48 2025 +0800
+
+    feat✨: 优化DataInfoCard组件，高亮修改后的数据
+
+[33mcommit b10a541f4d48b6930829ea156599b052ee905c16[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 12:02:07 2025 +0800
+
+    fix🐛: 更新AppFooter组件中的社交链接URL
+
+[33mcommit 2b2d101bd90cc5b458c9dc93717a9cffa2863508[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 11:43:12 2025 +0800
+
+    fix🐛: 修复了一个按键卡扣缺失
+
+[33mcommit 6fbd9b521f3bf1113bd2c36ed0333d8851a171b9[m
+Author: KJ <ijink@icloud.com>
+Date:   Sun Mar 9 11:41:16 2025 +0800
+
+    feat✨: 添加primeflex依赖，优化DeviceInfoCard样式，重构媒体选择器和键盘选择器逻辑，移除冗余样式，增加HID转换器功能
+
+[33mcommit bf45812c179044a1b958055f18b0df11f2a4bb1e[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 23:51:08 2025 +0800
+
+    feat✨:完善3种类型映射录入， 添加DataInfoCard组件，更新设备信息展示逻辑，优化数据发送和接收处理。基本功能完成。
+
+[33mcommit 0efb768e962df474762aee96ebfc8e2dad170f0f[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 23:13:00 2025 +0800
+
+    feat✨: 添加KnobButton组件，重构KnobKeyboard，优化按钮选择逻辑，更新媒体和鼠标配置
+
+[33mcommit 3a8045ec281181c670a37f612189ae6cb763cd6f[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 19:57:14 2025 +0800
+
+    feat✨: (软硬联调)更新键盘处理逻辑，添加原始HID数据下按键按下和释放功能，实现键盘类型的按键修改
+
+[33mcommit 597954ad88728c4c63ca9b0da4c8fd0ae9e7f675[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 17:33:26 2025 +0800
+
+    feat✨: 添加MouseSelector组件，更新鼠标配置逻辑，优化样式和类型定义，增加primeicons依赖
+
+[33mcommit 502671d004604972769c9d629945537126fa392d[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 16:43:56 2025 +0800
+
+    feat✨: 添加MouseSelector组件，更新NormalButton组件以支持当前索引，优化样式和类型定义
+
+[33mcommit 70e34e73f3da9b44b167d9482bcc97c61ce6d114[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 14:40:12 2025 +0800
+
+    feat✨: 重构NormalButton和KnobKeyboard组件，优化按键映射逻辑，删除无用的验证工具函数
+
+[33mcommit e764cafe417955ffb3a046093be9f08a0cf4d8bc[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 13:17:58 2025 +0800
+
+    feat✨: 更新KnobBox模型文件
+
+[33mcommit f09560c0d20767e93d878d322be68019319c6313[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 13:12:55 2025 +0800
+
+    feat✨: 增加模型文件
+
+[33mcommit 5b173a831aa71678cbe78a18bb83c33121494967[m
+Merge: d8be8d8 3f9bbae
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 00:23:00 2025 +0800
+
+    Merge branch 'main' of https://github.com/MeowKJ/BinaryKeyboard
+
+[33mcommit d8be8d899f14252d4f14ab49b4abcc31d74f13a3[m
+Author: KJ <ijink@icloud.com>
+Date:   Fri Mar 7 00:22:56 2025 +0800
+
+    feat✨: 添加键盘、媒体和鼠标类型常量，重构按键映射逻辑，优化组件交互（未完成的）
+
+[33mcommit 3f9bbae412892e44e4248a24fb4f7dd23494ba2f[m
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Thu Mar 6 17:51:09 2025 +0800
+
+    Update README.md
+
+[33mcommit f302951d597e35ecbe7dfeabdd90be8f2094dc11[m[33m ([m[1;31mupstream/test[m[33m, [m[1;31morigin/test[m[33m)[m
+Author: KJ <ijink@icloud.com>
+Date:   Thu Mar 6 17:34:51 2025 +0800
+
+    feat✨: 添加Vue前端改键项目框架
+
+[33mcommit e15116ac68c6638a150205841539596c94922c1f[m
+Author: KJ <ijink@icloud.com>
+Date:   Mon Mar 3 02:09:56 2025 +0800
+
+    feat✨: 复合HID与EEPROM配置管理
+    
+    • ✨ 新增复合HID设备支持
+      - 添加键盘(0x01)/鼠标(0x02)/媒体控制(0x03)三路Report ID
+      - 符合USB HID 1.11规范
+      - 支持同时发送多设备事件
+    
+    • 🗃️ 实现EEPROM配置管理
+      | 地址 | 字段         | 说明                 |
+      |------|--------------|----------------------|
+      | 0x00 | 固件版本      | 当前版本 v1.0 (0x01) |
+      | 0x01 | 设备类型      | 旋钮款标识 (0x02)    |
+      | 0x02 | 键位配置数据  | 8键×3字节连续存储     |
+
+[33mcommit 4fc6717c996089be8b24672082d7918c5f90a045[m[33m ([m[1;33mtag: [m[1;33mv1.1[m[33m, [m[1;33mtag: [m[1;33mv1[m[33m, [m[1;31mupstream/v1-no-keybinding[m[33m, [m[1;31morigin/v1-no-keybinding[m[33m)[m
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Wed Feb 12 20:56:49 2025 +0800
+
+    Update README.md
+
+[33mcommit 8fa52c36fb868d7bc20d063b470a186257f888d7[m
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Wed Feb 12 20:56:31 2025 +0800
+
+    Update README.md
+
+[33mcommit 628a41e0ea3797c90d012a4a13e223517bd2c0b9[m
+Author: KJ <ijink@icloud.com>
+Date:   Wed Feb 12 20:45:32 2025 +0800
+
+    add README.md
+
+[33mcommit 1a2fe982d7288fc34037fac216ed51e1d7f95971[m
+Author: KJ <ijink@icloud.com>
+Date:   Wed Feb 12 20:27:32 2025 +0800
+
+    First Commit
+
+[33mcommit ec91e63f24af5d66c8f52416dfffa6bbcac9e460[m
+Author: KJ <65823167+MeowKJ@users.noreply.github.com>
+Date:   Wed Feb 12 17:55:52 2025 +0800
+
+    Initial commit
