@@ -994,15 +994,28 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
 
     // INFO → [0x40, sub, 0, total_hi, total_lo, page_size, macro_count, free_hi, free_lo]
     const info = await this.sendMeowFsCmd(transport, Ch552MacroSub.INFO);
+    if (info.length < 9) {
+      throw new Error(`MeowFS INFO 响应过短: ${info.length}`);
+    }
     const fsTotal = ((info[3] ?? 0) << 8) | (info[4] ?? 0);
+    const pageSize = info[5] ?? 0;
     const macroCount = info[6] ?? 0;
     const fsFree = ((info[7] ?? 0) << 8) | (info[8] ?? 0);
+    if (fsTotal === 0 || fsFree > fsTotal || pageSize === 0 || pageSize > fsTotal) {
+      throw new Error(`MeowFS 文件系统元数据无效: total=${fsTotal}, free=${fsFree}, page=${pageSize}`);
+    }
     const usedBytes = fsTotal - fsFree;
+    if (macroCount * CH552_MEOWFS_HEADER_SIZE > usedBytes) {
+      throw new Error(`MeowFS 宏数量与已用空间不一致: ${macroCount}/${usedBytes}`);
+    }
 
     let macros: MeowFsMacroEntry[] = [];
     if (macroCount > 0 && usedBytes > 0) {
       const raw = await this.readFsChunked(transport, 0, usedBytes);
       macros = this.parseFsData(raw);
+      if (macros.length !== macroCount) {
+        throw new Error(`MeowFS 宏目录损坏: expected=${macroCount}, actual=${macros.length}`);
+      }
     }
 
     this.meowfsCache = { fsTotal, fsFree, macros };

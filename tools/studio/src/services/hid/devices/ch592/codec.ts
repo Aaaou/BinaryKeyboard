@@ -713,12 +713,21 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     const pageSize = resp.getUint16(d + 3, false);
     const macroCount = resp.getUint8(d + 5);
     const fsFree = resp.getUint16(d + 6, false);
-    const usedBytes = Math.max(0, fsTotal - fsFree);
+    if (fsTotal === 0 || fsFree > fsTotal || pageSize === 0 || pageSize > fsTotal) {
+      throw new Error(`MACRO_INFO 文件系统元数据无效: total=${fsTotal}, free=${fsFree}, page=${pageSize}`);
+    }
+    const usedBytes = fsTotal - fsFree;
+    if (macroCount * CH592_MEOWFS_HEADER_SIZE > usedBytes) {
+      throw new Error(`MACRO_INFO 宏数量与已用空间不一致: ${macroCount}/${usedBytes}`);
+    }
 
     let macros: MeowFsMacroEntry[] = [];
     if (macroCount > 0 && usedBytes > 0) {
       const raw = await this.readFsChunked(transport, 0, usedBytes);
       macros = this.parseFsData(raw);
+      if (macros.length !== macroCount) {
+        throw new Error(`MeowFS 宏目录损坏: expected=${macroCount}, actual=${macros.length}`);
+      }
     }
 
     this.meowfsCache = { fsTotal, fsFree, pageSize, macros };
