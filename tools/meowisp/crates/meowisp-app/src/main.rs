@@ -221,6 +221,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             let mut binary = read_firmware_from_file(&file)
                 .with_context(|| format!("failed to read firmware file: {file}"))?;
+            anyhow::ensure!(!binary.is_empty(), "firmware file is empty");
             extend_firmware_to_sector_boundary(&mut binary);
             log::info!("Firmware size: {}", binary.len());
 

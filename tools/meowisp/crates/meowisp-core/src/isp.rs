@@ -201,6 +201,9 @@ where
     progress("读取固件", 8);
     let mut data = wchisp::format::read_firmware_from_file(firmware_path)
         .map_err(|e| map_wchisp_error("flash/read_firmware", "无法读取固件文件", e))?;
+    if data.is_empty() {
+        return Err("固件文件为空，已取消刷写".into());
+    }
     pad_to_sector(&mut data);
     debug_line(format!("flash: padded_size={} bytes", data.len()));
 

@@ -204,6 +204,7 @@ fn main() -> Result<()> {
             flashing.dump_info()?;
 
             let mut binary = wchisp::format::read_firmware_from_file(path)?;
+            anyhow::ensure!(!binary.is_empty(), "firmware file is empty");
             extend_firmware_to_sector_boundary(&mut binary);
             log::info!("Firmware size: {}", binary.len());
 
