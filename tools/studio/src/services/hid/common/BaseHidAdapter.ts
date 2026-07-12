@@ -302,7 +302,14 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
       return;
 
     const frame = this.responseFrameBytes(event);
-    const packet = this.codec.parseIncomingPacket(frame);
+    let packet: ReturnType<DeviceCodec<TResponse>["parseIncomingPacket"]>;
+    try {
+      packet = this.codec.parseIncomingPacket(frame);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.clearPendingResponse(new Error(`设备返回了无效数据: ${message}`));
+      return;
+    }
     this.addTerminalEntry(packet.entry);
 
     if (packet.kind === "event") {
