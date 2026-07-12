@@ -228,7 +228,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 log::warn!("Skipping erase");
             } else {
                 log::info!("Erasing...");
-                let sectors = binary.len() / SECTOR_SIZE + 1;
+                let sectors = binary.len() / SECTOR_SIZE;
                 flashing
                     .erase_code(sectors as u32)
                     .context("erase failed")?;

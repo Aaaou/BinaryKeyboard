@@ -210,7 +210,7 @@ where
     log_chip_context("flash", &flashing);
     let chip_info = chip_info_from_chip(&flashing.chip);
 
-    let sectors = (data.len() / SECTOR_SIZE + 1) as u32;
+    let sectors = (data.len() / SECTOR_SIZE) as u32;
     debug_line(format!("flash: erase_code sectors={sectors}"));
     progress("擦除 Codeflash", 28);
     flashing
