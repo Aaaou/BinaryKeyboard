@@ -59,7 +59,7 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
       if (this.device && this.device !== device) {
         this.device.removeEventListener("inputreport", this.inputReportHandler);
       }
-      this.clearPendingResponse();
+      this.clearPendingResponse(new Error("设备连接已切换，命令已取消"));
       this.staleResponses = [];
       this.responseDrainUntil = 0;
       this.codec.resetState?.();
@@ -103,6 +103,7 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.clearPendingResponse(new Error("设备已断开，命令已取消"));
     if (this.device) {
       try {
         this.device.removeEventListener("inputreport", this.inputReportHandler);
@@ -115,7 +116,6 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
     this.staleResponses = [];
     this.responseDrainUntil = 0;
     this.codec.resetState?.();
-    this.clearPendingResponse();
   }
 
   getDevice(): HIDDevice | null {
