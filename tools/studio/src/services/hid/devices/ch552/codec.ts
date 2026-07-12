@@ -1028,6 +1028,7 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
   }
 
   private async getMacroInfo(transport: CodecTransport<Uint8Array>, index: number): Promise<MacroHeader> {
+    this.validateMacroIndex(index);
     const cache = await this.ensureMeowFsCache(transport);
     if (index >= cache.macros.length) {
       return { valid: 0, id: index, actionCount: 0, dataSize: 0, name: '' };
@@ -1043,6 +1044,7 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
   }
 
   private async getMacroData(transport: CodecTransport<Uint8Array>, index: number): Promise<MacroData> {
+    this.validateMacroIndex(index);
     const cache = await this.ensureMeowFsCache(transport);
     if (index >= cache.macros.length) {
       return {
@@ -1070,6 +1072,7 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
     index: number,
     macro: MacroData,
   ): Promise<void> {
+    this.validateMacroIndex(index);
     const cache = await this.ensureMeowFsCache(transport);
     const macros = cache.macros.map((m) => ({
       actionCount: m.actionCount,
@@ -1108,6 +1111,7 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
   }
 
   private async deleteMacro(transport: CodecTransport<Uint8Array>, index: number): Promise<void> {
+    this.validateMacroIndex(index);
     const cache = await this.ensureMeowFsCache(transport);
     if (index >= cache.macros.length) {
       throw new Error(`宏索引 ${index} 不存在`);
@@ -1115,6 +1119,12 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
 
     await this.sendMeowFsCmd(transport, Ch552MacroSub.DELETE, new Uint8Array([index]));
     this.meowfsCache = null;
+  }
+
+  private validateMacroIndex(index: number): void {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error(`无效的宏索引 ${index}`);
+    }
   }
 
   private async readWithRetry<T>(label: string, task: () => Promise<T>): Promise<T> {

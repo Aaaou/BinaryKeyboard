@@ -471,6 +471,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async getMacroInfo(transport: CodecTransport<DataView>, slot: number): Promise<MacroHeader> {
+    this.validateMacroIndex(slot);
     const cache = await this.ensureMeowFsCache(transport);
     if (slot >= cache.macros.length) {
       return { valid: 0, id: slot, actionCount: 0, dataSize: 0, name: '' };
@@ -487,6 +488,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async getMacroData(transport: CodecTransport<DataView>, slot: number): Promise<MacroData> {
+    this.validateMacroIndex(slot);
     const cache = await this.ensureMeowFsCache(transport);
     if (slot >= cache.macros.length) {
       return {
@@ -515,6 +517,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     slot: number,
     macro: MacroData,
   ): Promise<void> {
+    this.validateMacroIndex(slot);
     const cache = await this.ensureMeowFsCache(transport);
     const macros = cache.macros.map((entry) => ({
       actionCount: entry.actionCount,
@@ -550,9 +553,20 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async deleteMacro(transport: CodecTransport<DataView>, slot: number): Promise<void> {
+    this.validateMacroIndex(slot);
+    const cache = await this.ensureMeowFsCache(transport);
+    if (slot >= cache.macros.length) {
+      throw new Error(`宏索引 ${slot} 不存在`);
+    }
     const resp = await this.sendCommand(transport, Command.MACRO_DEL, slot);
     this.expectOk(resp, 'MACRO_DEL');
     this.meowfsCache = null;
+  }
+
+  private validateMacroIndex(slot: number): void {
+    if (!Number.isInteger(slot) || slot < 0) {
+      throw new Error(`无效的宏索引 ${slot}`);
+    }
   }
 
   private async readFsChunked(
