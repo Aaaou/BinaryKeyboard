@@ -233,7 +233,18 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
     return responsePromise;
   }
 
-  protected async sendNoWait(
+  protected sendNoWait(
+    frame: Uint8Array,
+    options?: CodecCommandOptions,
+  ): Promise<void> {
+    const task = this.sendQueue.then(() =>
+      this.sendNoWaitInternal(frame, options),
+    );
+    this.sendQueue = task.catch(() => {});
+    return task;
+  }
+
+  private async sendNoWaitInternal(
     frame: Uint8Array,
     _options?: CodecCommandOptions,
   ): Promise<void> {
