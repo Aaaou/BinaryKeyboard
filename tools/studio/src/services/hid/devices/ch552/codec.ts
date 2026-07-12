@@ -906,10 +906,11 @@ export class Ch552Codec implements DeviceCodec<Uint8Array> {
         new Uint8Array([(absOff >> 8) & 0xFF, absOff & 0xFF, chunkLen]),
       );
       const readLen = resp[3] ?? 0;
-      for (let i = 0; i < readLen && pos + i < length; i++) {
-        result[pos + i] = resp[4 + i] ?? 0;
+      if (readLen === 0 || readLen > chunkLen || 4 + readLen > resp.length) {
+        throw new Error(`MeowFS 读取返回长度无效: ${readLen}/${chunkLen}`);
       }
-      pos += readLen || chunkLen;
+      result.set(resp.subarray(4, 4 + readLen), pos);
+      pos += readLen;
     }
     return result;
   }

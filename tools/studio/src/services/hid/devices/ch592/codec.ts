@@ -578,10 +578,13 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       );
       const d = this.expectOk(resp, 'MACRO_GET');
       const readLen = resp.getUint8(d + 1);
-      for (let i = 0; i < readLen && pos + i < length; i++) {
+      if (readLen === 0 || readLen > chunkLen || d + 2 + readLen > resp.byteLength) {
+        throw new Error(`MACRO_GET 返回长度无效: ${readLen}/${chunkLen}`);
+      }
+      for (let i = 0; i < readLen; i++) {
         result[pos + i] = resp.getUint8(d + 2 + i);
       }
-      pos += readLen || chunkLen;
+      pos += readLen;
     }
 
     return result;
