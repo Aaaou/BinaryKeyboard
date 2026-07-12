@@ -212,6 +212,12 @@ where
         .map_err(|e| map_wchisp_error("flash/open", "无法连接 USB 设备", e))?;
     log_chip_context("flash", &flashing);
     let chip_info = chip_info_from_chip(&flashing.chip);
+    if data.len() > flashing.chip.flash_size as usize {
+        return Err(format!(
+            "固件大小 {} 字节超过芯片 Codeflash 容量 {} 字节，已取消刷写",
+            data.len(), flashing.chip.flash_size
+        ));
+    }
 
     let sectors = (data.len() / SECTOR_SIZE) as u32;
     debug_line(format!("flash: erase_code sectors={sectors}"));

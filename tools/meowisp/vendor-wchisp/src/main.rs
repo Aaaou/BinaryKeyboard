@@ -207,6 +207,12 @@ fn main() -> Result<()> {
             anyhow::ensure!(!binary.is_empty(), "firmware file is empty");
             extend_firmware_to_sector_boundary(&mut binary);
             log::info!("Firmware size: {}", binary.len());
+            anyhow::ensure!(
+                binary.len() <= flashing.chip.flash_size as usize,
+                "firmware size {} exceeds code flash capacity {}",
+                binary.len(),
+                flashing.chip.flash_size
+            );
 
             if *no_erase {
                 log::warn!("Skipping erase");
