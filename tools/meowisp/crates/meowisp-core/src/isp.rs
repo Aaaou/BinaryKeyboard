@@ -201,6 +201,9 @@ where
     progress("读取固件", 8);
     let mut data = wchisp::format::read_firmware_from_file(firmware_path)
         .map_err(|e| map_wchisp_error("flash/read_firmware", "无法读取固件文件", e))?;
+    if data.is_empty() {
+        return Err("固件文件为空，已取消刷写".into());
+    }
     pad_to_sector(&mut data);
     debug_line(format!("flash: padded_size={} bytes", data.len()));
 
@@ -209,8 +212,14 @@ where
         .map_err(|e| map_wchisp_error("flash/open", "无法连接 USB 设备", e))?;
     log_chip_context("flash", &flashing);
     let chip_info = chip_info_from_chip(&flashing.chip);
+    if data.len() > flashing.chip.flash_size as usize {
+        return Err(format!(
+            "固件大小 {} 字节超过芯片 Codeflash 容量 {} 字节，已取消刷写",
+            data.len(), flashing.chip.flash_size
+        ));
+    }
 
-    let sectors = (data.len() / SECTOR_SIZE + 1) as u32;
+    let sectors = (data.len() / SECTOR_SIZE) as u32;
     debug_line(format!("flash: erase_code sectors={sectors}"));
     progress("擦除 Codeflash", 28);
     flashing

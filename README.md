@@ -3,13 +3,10 @@
 </p>
 
 <p align="center">
-  ✨ <b>BinaryKeyboard</b> ✨
+  <b>BinaryKeyboard</b>
 </p>
 
 <p align="center">
-  <a href="https://oshwhub.com/<your_name>/<your_project>">
-    <img alt="OSHWHub 开源硬件" src="https://img.shields.io/badge/OSHWHub-开源项目-ff5a5f">
-  </a>
   <a href="https://www.wch-ic.com/">
     <img alt="沁恒 WCH 支持芯片" src="https://img.shields.io/badge/WCH-支持芯片-0d6efd">
   </a>
@@ -18,36 +15,23 @@
   </a>
 </p>
 
-<p align="center">
-  <sub>Design by <b>KJ</b> · Made with love</sub>
-</p>
-
-<p align="center">
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#文档">文档</a> ·
-  <a href="#许可">许可</a>
-</p>
-
-<hr>
-
 # 概述
 
-**BinaryKeyboard** 可爱二进制键盘
+BinaryKeyboard 是开源迷你宏键盘项目，提供 CH552G USB 有线版和 CH592F USB / BLE 双模版。
+
+- 在线文档：[meowkj.github.io/BinaryKeyboard](https://meowkj.github.io/BinaryKeyboard/)
+- 无线款使用：[无线款使用手册](docs/wireless/manual.md)
+- 固件发行：[GitHub Releases](https://github.com/MeowKJ/BinaryKeyboard/releases)
 
 # 快速开始
 
-- 在线文档：https://meowkj.github.io/BinaryKeyboard/
-- 统一终端控制台：`python run.py` 或 `python tools/scripts/console.py`
-
-## 推荐入口
-
-仓库根目录下直接运行：
+在仓库根目录运行：
 
 ```bash
 python run.py
 ```
 
-脚本会自动在仓库根目录创建 `.venv`，检查并安装 `tools/scripts/requirements-console.txt` 里的控制台依赖，然后启动 `console.py`。
+脚本会创建 `.venv`，安装 `tools/scripts/requirements-console.txt` 中的控制台依赖，并启动 `console.py`。
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/613f457f-a9cb-4ff9-802f-9bca668542ec" width="960" alt="BinaryKeyboard console.py TUI">

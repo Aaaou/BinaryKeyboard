@@ -10,8 +10,8 @@
 
 - 首次烧录使用 `CH592F-<MODEL>-<version>-full.hex`
 - 后续通过 Studio 热更新使用 `CH592F-<MODEL>-<version>-app.bin`
-- Windows 推荐使用 `WCHISPStudio`
-- macOS / Linux 推荐使用喵喵的终端工具：`python tools/scripts/console.py`
+- Windows：使用 `WCHISPStudio`
+- macOS / Linux：使用 `python tools/scripts/console.py`
 
 ## 进入 Bootloader 模式
 
@@ -20,9 +20,7 @@
 3. 按住不放的同时插入 USB-C
 4. 松开按钮
 
-::: tip
-这里进入的是芯片 ROM 自带下载模式，不是应用层更新流程。
-:::
+这里进入的是芯片 ROM 下载模式，不是 Studio 的应用层更新流程。
 
 ## Windows
 
@@ -76,18 +74,16 @@ python tools/scripts/console.py
 
 ## 蓝牙配对测试
 
-刷写完成后建议立刻做一次 BLE 验证：
+刷写完成后做一次 BLE 验证：
 
 1. 重新拔插 USB，让设备正常启动。
 2. 短按 `FN1` 切换到 BLE 模式，设备会保存模式并重启。
 3. 在系统蓝牙设置中搜索 `BinaryKeyboard5KEY` 或 `BinaryKeyboardKNOB`。
 4. 连接成功后，打开文本编辑器按 K1~K5 或 K1~K4 测试输入。
 5. 旋钮款额外测试旋钮左转、右转和按下。
-6. 如果需要回到 Studio 改键，短按 `FN1` 切回 USB 模式，再用 USB 连接。
+6. 如果需要回到 Studio 改键，直接插入 USB-C 数据线即可；最新版固件在 BLE 工作模式下也保留 USB 配置通道。
 
-::: tip 清除配对
-如果系统显示已配对但无法连接，在 BLE 模式下长按 `FN2` 清除键盘端配对信息；同时在电脑 / 手机蓝牙列表中删除旧设备，再重新搜索。
-:::
+如果系统显示已配对但无法连接，在 BLE 模式长按 `FN2` 清除键盘端配对信息；同时在电脑或手机蓝牙列表中删除旧设备，再重新搜索。
 
 ::: warning 首刷后模式
 无线版会记住上一次 USB / BLE 模式。若设备看起来没有进入蓝牙广播，先短按 `FN1` 切换模式，再重新观察指示灯状态。

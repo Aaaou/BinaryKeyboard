@@ -221,14 +221,21 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             let mut binary = read_firmware_from_file(&file)
                 .with_context(|| format!("failed to read firmware file: {file}"))?;
+            anyhow::ensure!(!binary.is_empty(), "firmware file is empty");
             extend_firmware_to_sector_boundary(&mut binary);
             log::info!("Firmware size: {}", binary.len());
+            anyhow::ensure!(
+                binary.len() <= flashing.chip.flash_size as usize,
+                "firmware size {} exceeds code flash capacity {}",
+                binary.len(),
+                flashing.chip.flash_size
+            );
 
             if skip_erase {
                 log::warn!("Skipping erase");
             } else {
                 log::info!("Erasing...");
-                let sectors = binary.len() / SECTOR_SIZE + 1;
+                let sectors = binary.len() / SECTOR_SIZE;
                 flashing
                     .erase_code(sectors as u32)
                     .context("erase failed")?;

@@ -289,7 +289,8 @@ static void HandleIapWrite(const kbd_cmd_frame_t *frame)
         }
     }
 
-    s_written_bytes = offset + payload_len;
+    /* 同一页会分多帧写入，使用实际页地址和页内偏移累计进度。 */
+    s_written_bytes = (s_page_flash_addr - IMAGE_B_START_ADD) + s_page_offset;
 
     resp[0] = KBD_RESP_OK;
     resp[1] = (s_written_bytes >> 16) & 0xFF;
@@ -348,7 +349,7 @@ static void HandleIapVerify(const kbd_cmd_frame_t *frame)
         ((uint32_t)frame->data[6] << 16) |
         ((uint32_t)frame->data[7] << 24);
 
-    if (fw_size == 0 || fw_size > IMAGE_B_SIZE)
+    if (fw_size == 0 || fw_size > IMAGE_B_SIZE || fw_size != s_written_bytes)
     {
         resp[0] = KBD_RESP_ERR_PARAM;
         memset(&resp[1], 0, 4);

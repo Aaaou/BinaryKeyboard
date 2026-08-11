@@ -59,7 +59,7 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
       if (this.device && this.device !== device) {
         this.device.removeEventListener("inputreport", this.inputReportHandler);
       }
-      this.clearPendingResponse();
+      this.clearPendingResponse(new Error("设备连接已切换，命令已取消"));
       this.staleResponses = [];
       this.responseDrainUntil = 0;
       this.codec.resetState?.();
@@ -103,6 +103,7 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.clearPendingResponse(new Error("设备已断开，命令已取消"));
     if (this.device) {
       try {
         this.device.removeEventListener("inputreport", this.inputReportHandler);
@@ -115,7 +116,6 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
     this.staleResponses = [];
     this.responseDrainUntil = 0;
     this.codec.resetState?.();
-    this.clearPendingResponse();
   }
 
   getDevice(): HIDDevice | null {
@@ -233,7 +233,18 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
     return responsePromise;
   }
 
-  protected async sendNoWait(
+  protected sendNoWait(
+    frame: Uint8Array,
+    options?: CodecCommandOptions,
+  ): Promise<void> {
+    const task = this.sendQueue.then(() =>
+      this.sendNoWaitInternal(frame, options),
+    );
+    this.sendQueue = task.catch(() => {});
+    return task;
+  }
+
+  private async sendNoWaitInternal(
     frame: Uint8Array,
     _options?: CodecCommandOptions,
   ): Promise<void> {
@@ -291,7 +302,14 @@ export abstract class BaseHidAdapter<TResponse> implements HidAdapter {
       return;
 
     const frame = this.responseFrameBytes(event);
-    const packet = this.codec.parseIncomingPacket(frame);
+    let packet: ReturnType<DeviceCodec<TResponse>["parseIncomingPacket"]>;
+    try {
+      packet = this.codec.parseIncomingPacket(frame);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.clearPendingResponse(new Error(`设备返回了无效数据: ${message}`));
+      return;
+    }
     this.addTerminalEntry(packet.entry);
 
     if (packet.kind === "event") {

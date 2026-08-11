@@ -1,6 +1,6 @@
 # 低功耗蓝牙 (BLE)
 
-MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT，支持标准 HID 设备配对与使用。
+BinaryKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT，支持标准 HID 设备配对与使用。
 
 ## 概览
 
@@ -9,7 +9,7 @@ MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT�
 | 芯片 | CH592F (RISC-V, BLE5.4) |
 | 角色 | 外设 (Peripheral) |
 | 连接数 | 单连接 |
-| 设备名称 | MeowKeyboard |
+| 设备名称 | `BinaryKeyboard5KEY` / `BinaryKeyboardKNOB` |
 
 ## GATT 服务列表
 
@@ -51,9 +51,7 @@ MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT�
 
 键盘、鼠标、多媒体报告与 USB HID 格式一致，详见 [HID 通讯协议](./hid.md)。
 
-::: info Report 协议模式
-固件使用 **Report Protocol Mode**，主机需通过 Protocol Mode 特性选择 Report 模式，并通过 Report 特性读写各 Report ID 对应数据。
-:::
+固件使用 **Report Protocol Mode**。主机通过 Protocol Mode 特性选择 Report 模式，再通过 Report 特性读写各 Report ID 对应数据。
 
 ---
 
@@ -102,11 +100,9 @@ MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT�
 | MITM | 禁用 | 无中间人保护 |
 | IO Capabilities | NoInputNoOutput | 无显示/输入能力（默认 Just Works） |
 
-绑定信息存储在 DataFlash **SNV 区** (0x7E00~0x7EFF)，由 WCH BLE 库管理，详见 [DataFlash 布局](./dataflash.md#ble-snv-区-0x7e00--0x7eff)。
+绑定信息存储在 DataFlash 的 BLE SNV 保留扇区。当前编译参数下 SNV 从偏移 `0x7000` 开始，占用 256B，但底层按 4KB 扇区擦除，因此 `0x7000`～`0x7FFF` 都不能与应用数据复用。详见 [DataFlash 布局](./dataflash.md#ble-snv)。
 
-::: tip 多设备配对
-支持与多台主机配对绑定，断开后可自动重连。通过 FN 键可触发「清除绑定」等操作。
-:::
+固件启用绑定记录，但同一时刻只支持一个活动连接。在 BLE 模式长按 `FN2` 会清除全部绑定并重启；主机端也要删除旧设备后重新配对。
 
 ---
 
@@ -135,7 +131,7 @@ MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT�
 | 配置项 | 默认值 | 说明 |
 | :----- | :----- | :--- |
 | BLE_SNV | TRUE | 启用 SNV 存储绑定 |
-| BLE_SNV_ADDR | 0x77000 - FLASH_ROM_MAX_SIZE | SNV 地址 (DataFlash 末段) |
+| BLE_SNV_ADDR | 0x77000 - FLASH_ROM_MAX_SIZE | 当前编译参数下为 DataFlash 偏移 0x7000 |
 | BLE_SNV_BLOCK | 256 | SNV 块大小 |
 | BLE_SNV_NUM | 1 | SNV 块数量 |
 | BLE_BUFF_MAX_LEN | 27 | 单包最大长度 (ATT_MTU=23) |
@@ -148,11 +144,12 @@ MeowKeyboard 无线版基于 CH592F 的 BLE5.4 协议栈，实现 HID over GATT�
 
 | 配置项 | 值 | 说明 |
 | :----- | :--- | :--- |
-| HID 空闲超时 | 60s | 无 HID 活动后的处理 |
+| LIGHT 默认超时 | 1 分钟 | 以 DataFlash / Studio 配置为准，0=禁用 |
+| DEEP 默认延时 | LIGHT 后 1 分钟 | 总空闲默认约 2 分钟，0=禁用 |
 | 按键唤醒 | 启用 | 按键可唤醒休眠 |
 | USB 唤醒 | 启用 | USB 插入可唤醒 |
 
-空闲一段时间后可进入低功耗，具体策略见固件 `kbd_mode_config.h`。
+USB 已完成枚举或检测到充电时不会进入自动低功耗。具体用户行为见 [无线款使用手册](./manual.md)，实现见 `kbd_mode.c` 和 DataFlash 中的 system 配置。
 
 ---
 
