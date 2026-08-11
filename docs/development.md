@@ -1,6 +1,6 @@
 # 开发总览
 
-开发文档放在使用文档之后。建议先确认目标芯片和键盘型号，再进入对应固件目录。
+先确认芯片和键盘型号，再进入对应固件目录。用户操作请看使用文档，不要直接从开发页开始刷写。
 
 ## 开发入口
 
@@ -13,7 +13,7 @@
 | 宏存储 | [MeowFS](./meowfs.md) | 有线 / 无线共用宏存储格式 |
 | 宏语言 | [MeowMacro](./meowmacro.md) | Studio 宏编辑语言与示例 |
 
-## 推荐工作流
+## 工作流
 
 1. 从仓库根目录运行统一控制台：
 
@@ -63,13 +63,13 @@ tools/
 └── studio/      # BinaryKeyboard Studio 前端
 ```
 
-## 改动建议
+## 改动检查项
 
-- 默认键位：先看 `kbd_storage.c` 或 `KeysDataHandler.c`。
-- 键位布局：先看固件型号宏，再看 Studio 的 `layouts.ts`。
-- 通讯协议：先改固件命令处理，再同步 Studio codec。
-- 宏：优先保持 MeowFS / MeowMacro 兼容，不要为单个芯片单独造格式。
-- 发布产物：保持 `config/versions.json`、Release asset 命名和 Studio 更新逻辑一致。
+- 默认键位：查看 `kbd_storage.c` 或 `KeysDataHandler.c`。
+- 键位布局：先核对固件型号宏，再核对 Studio 的 `layouts.ts`。
+- 通讯协议：先修改固件命令处理，再同步 Studio codec。
+- 宏：保持 MeowFS / MeowMacro 兼容。
+- 发布产物：同步检查 `config/versions.json`、Release asset 命名和 Studio 更新逻辑。
 
 ## 验证清单
 

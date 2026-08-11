@@ -1,15 +1,13 @@
-# 便捷开发工具
+# 开发工具
 
-::: warning
-`MounRiver Studio` 开发时，这一页可以跳过。
-:::
+使用 `MounRiver Studio` 时不需要本页的命令行和 VS Code 配置。
 
-这里整理两类辅助工具：
+本页列出两类辅助工具：
 
 - `tools/scripts/console.py`：统一 TUI 入口
 - `.vscode/tasks.json` / `.vscode/settings.json`：VS Code 任务栏按钮示例
 
-## 怎么选
+## 使用入口
 
 - 终端交互入口使用 `tools/scripts/console.py`
 - VS Code 使用任务按钮
@@ -67,7 +65,7 @@ python tools/scripts/console.py
 
 ## VS Code 任务
 
-仓库默认不提交 `.vscode/tasks.json` / `.vscode/settings.json`，下面这份是当前脚本体系对应的参考配置。
+仓库默认不提交 `.vscode/tasks.json` / `.vscode/settings.json`。下面的示例与当前脚本参数对应。
 
 ## 附件 A：示例 `.vscode/tasks.json`
 

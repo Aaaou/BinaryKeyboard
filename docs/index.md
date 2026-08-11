@@ -3,41 +3,38 @@ layout: home
 
 hero:
   name: "BinaryKeyboard"
-  text: "可爱二进制键盘 🐱"
-  tagline: 开源迷你键盘项目
+  text: "开源迷你宏键盘"
+  tagline: CH552G 有线版与 CH592F USB / BLE 双模版
   image:
     src: /logo.svg
     alt: BinaryKeyboard Logo
   actions:
     - theme: brand
-      text: 🎹 开始使用
+      text: 开始使用
       link: /usage
     - theme: alt
-      text: ⚡ 经典版
+      text: 经典版
       link: /wired/
     - theme: alt
-      text: 📡 无线版
-      link: /wireless/
+      text: 无线版手册
+      link: /wireless/manual
 
 features:
-  - icon: 🎹
-    title: 迷你宏键盘
-    details: 基于 CH552G / CH592F，支持基础款、五键款、旋钮款多种外形
+  - icon: ⌨️
+    title: 三种布局
+    details: BASIC、5KEY 和 KNOB；无线版提供 5KEY 与 KNOB。
   - icon: 🛠️
     title: 开源固件
-    details: 完整固件源码，支持自定义功能和键位映射
-  - icon: 🌐
+    details: 提供固件、构建脚本、刷写工具和协议实现。
+  - icon: ⚙️
     title: Web 改键工具
-    details: 基于 Vue3 的在线改键工具，无需安装任何软件
-  - icon: 🧊
-    title: 3D 打印外壳
-    details: 提供 Shapr3D / STL 文件，自由 DIY 你的键盘外壳
-  - icon: 📱
-    title: 有线 & 无线
-    details: 支持 USB 有线连接和无线连接（无线款）两种模式
+    details: 在 Chromium 浏览器中通过 WebHID 配置键位、层、RGB 和宏。
+  - icon: 📡
+    title: 两种连接方式
+    details: 经典版使用 USB；无线版可在 USB 与 BLE 间切换。
   - icon: 💡
     title: RGB 灯效
-    details: 支持 WS2812 RGB 灯珠，多种灯效可选
+    details: 支持静态、呼吸、闪烁、彩虹、状态和层切换提示。
 ---
 
 <style>

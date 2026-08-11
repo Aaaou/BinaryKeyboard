@@ -234,7 +234,7 @@ firmware/CH592F/
 
 | 文件                | 功能                           |
 | :------------------ | :----------------------------- |
-| `kbd_mode.c`        | USB/BLE/2.4G 多模切换、连接状态管理（2.4G 预留） |
+| `kbd_mode.c`        | USB / BLE 模式切换、连接状态与低功耗管理 |
 | `ble_hid.c`         | 蓝牙 HID 报告发送              |
 | `ble_hid_service.c` | HID GATT 服务实现              |
 
@@ -463,7 +463,7 @@ cmake --build firmware/build/dev --target ch592_all
 - 或使用 `MRS_TOOLCHAIN_ROOT` / `TOOLCHAIN_DIR` / `RISCV_TOOLCHAIN_DIR` / 系统 `PATH` 提供编译器
 
 说明：
-- 推荐将构建和烧录分离：
+- 构建和烧录可以分开执行：
   `tools/scripts/ch592f.py` 负责 preset 构建，`tools/scripts/flash.py` 负责烧录现成产物
 - VS Code CMake Tools 直接使用当前选中的共享 preset 即可，不需要 `local-*`
 
@@ -496,11 +496,11 @@ python tools/scripts/ch592f.py build --keyboard KNOB --profile release
 按键映射定义在 `kbd_types.h`，核心结构层次为：
 
 ```
-kbd_keymap_t (完整映射)
-├── num_layers        // 实际层数 (1-4)
+kbd_keymap_t
+├── num_layers        // 实际层数 (1-5)
 ├── current_layer     // 当前激活层
 ├── default_layer     // 默认层
-└── layers[4]         // 层数组
+└── layers[5]         // 层数组
     └── kbd_layer_t   // 单层映射 (32 字节)
         └── keys[8]   // 按键数组
             └── kbd_action_t  // 单键动作 (4 字节)
@@ -528,7 +528,7 @@ typedef struct __attribute__((packed)) {
 | 0x02    | 鼠标按键 | -          | 按键掩码         | -               |
 | 0x03    | 鼠标滚轮 | -          | 方向 (1=上 2=下) | -               |
 | 0x04    | 多媒体键 | -          | Usage ID 低字节  | Usage ID 高字节 |
-| 0x05    | 执行宏   | -          | 宏 ID (0-7)      | -               |
+| 0x05    | 执行宏   | 触发方式   | 动态宏索引       | -               |
 | 0x06    | 层切换   | 操作类型   | 层号             | -               |
 
 #### 修饰键掩码
@@ -566,12 +566,12 @@ typedef struct __attribute__((packed)) {
 
 ```c
 typedef struct __attribute__((packed)) {
-    uint8_t     num_layers;             // 实际使用层数 (1-4)
+    uint8_t     num_layers;             // 实际使用层数 (1-5)
     uint8_t     current_layer;          // 当前激活层
     uint8_t     default_layer;          // 默认层
     uint8_t     reserved;
-    kbd_layer_t layers[KBD_MAX_LAYERS]; // 4 层 × 32 字节 = 128 字节
-} kbd_keymap_t;  // 总计 132 字节
+    kbd_layer_t layers[KBD_MAX_LAYERS]; // 5 层 × 32 字节 = 160 字节
+} kbd_keymap_t;  // 总计 164 字节
 ```
 
 ### FN 键配置
@@ -650,11 +650,11 @@ typedef enum {
 
 | 状态       | 颜色 | 效果   |
 | :--------- | :--- | :----- |
-| USB 已连接 | 白色 | 常亮   |
+| USB 已连接 | 白色 | 短亮 |
 | 蓝牙未连接 | 红色 | 慢呼吸 |
 | 蓝牙广播中 | 蓝色 | 呼吸   |
-| 蓝牙已连接 | 绿色 | 常亮   |
-| 低电量     | 红色 | 快闪   |
+| 蓝牙已连接 | 绿色 | 短亮 |
+| 低电量     | 橙红色 | 快闪 |
 
 ### API 使用
 
@@ -740,10 +740,10 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 | 0x23   | LAYER_SET  | -           | 设置当前层         |
 | 0x30   | RGB_GET    | -           | 获取 RGB 配置      |
 | 0x31   | RGB_SET    | -           | 设置 RGB 配置      |
-| 0x40   | MACRO_INFO | 槽位号/0xFF | 获取宏信息         |
-| 0x41   | MACRO_GET  | 槽位号      | 读取宏数据 (分包)  |
-| 0x42   | MACRO_SET  | 槽位号      | 写入宏数据 (分包)  |
-| 0x43   | MACRO_DEL  | 槽位号      | 删除宏             |
+| 0x40   | MACRO_INFO | -           | 获取 MeowFS 容量、页大小、有效宏数与剩余空间 |
+| 0x41   | MACRO_GET  | -           | 按偏移读取 MeowFS 原始数据 |
+| 0x42   | MACRO_SET  | `sub=0/1`   | 擦除页 / 全区或按偏移写入原始数据 |
+| 0x43   | MACRO_DEL  | 宏索引      | 标记删除指定有效宏 |
 | 0x50   | FNKEY_GET  | -           | 获取 FN 键配置     |
 | 0x51   | FNKEY_SET  | -           | 设置 FN 键配置     |
 | 0x60   | BATTERY    | -           | 获取电池信息       |
@@ -756,7 +756,7 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 
 **请求**: 无参数
 
-**响应** (14 字节):
+**响应** (18 字节):
 
 | 偏移   | 长度 | 字段           | 说明                         |
 | :----- | :--- | :------------- | :--------------------------- |
@@ -770,14 +770,13 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 | 7      | 1    | 补丁版本       | 固件补丁版本                 |
 | 8      | 1    | 最大层数       | 支持的最大层数 (5)           |
 | 9      | 1    | 最大键数       | 单层最大键数 (8)             |
-| 10     | 1    | 宏槽位数       | 宏存储槽位数 (8)             |
+| 10     | 1    | 有效宏数       | 当前 MeowFS 中有效宏的数量   |
 | **11** | 1    | **键盘类型**   | 1=五键款, 2=旋钮款（0 保留） |
 | **12** | 1    | **实际键位数** | 当前类型的虚拟键位数 (5/7)   |
-| 13     | 1    | FN 键数量      | FN 功能键数量                |
+| 13     | 1    | FN 键数量      | 当前为 2                     |
+| 14-17  | 4    | 保留           | 当前为 0                     |
 
-::: tip 上位机适配
-上位机应根据 `键盘类型` 和 `实际键位数` 字段动态调整 UI 显示和数据交换格式。
-:::
+上位机应根据 `键盘类型` 和 `实际键位数` 动态调整 UI 和键位数据。
 
 ---
 
@@ -800,7 +799,7 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 
 ### 0x20 KEYMAP_GET - 获取按键映射
 
-**请求**: SUB = 层号 (0-3)
+**请求**: `SUB` = 层号（`0` 到 `num_layers - 1`）
 
 **响应** (4 + 32 字节):
 
@@ -841,7 +840,7 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 
 **请求**: 无参数
 
-**响应** (9 字节):
+**响应** (13 字节):
 
 | 偏移 | 字段       | 说明             |
 | :--- | :--------- | :--------------- |
@@ -853,13 +852,17 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 | 5    | color_r    | 静态颜色 R       |
 | 6    | color_g    | 静态颜色 G       |
 | 7    | color_b    | 静态颜色 B       |
-| 8    | indicator  | 状态指示开关     |
+| 8    | indicator_enabled | 状态指示开关 |
+| 9    | indicator_brightness | 指示灯亮度 |
+| 10   | press_effect | 按键反馈效果 |
+| 11   | auto_sleep_min | LIGHT 休眠分钟数 |
+| 12   | deep_sleep_min | LIGHT 后到 DEEP 的分钟数 |
 
 ---
 
 ### 0x31 RGB_SET - 设置 RGB 配置
 
-**请求** (8 字节):
+**请求** (12 字节):
 
 | 偏移 | 字段       | 说明         |
 | :--- | :--------- | :----------- |
@@ -870,7 +873,11 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 | 4    | color_r    | 静态颜色 R   |
 | 5    | color_g    | 静态颜色 G   |
 | 6    | color_b    | 静态颜色 B   |
-| 7    | indicator  | 状态指示开关 |
+| 7    | indicator  | 保留；固件始终启用状态指示 |
+| 8    | indicator_brightness | 指示灯亮度，低于 13 时钳制为 13 |
+| 9    | press_effect | 0=无，1=亮起渐灭，2=熄灭渐亮 |
+| 10   | auto_sleep_min | LIGHT 休眠分钟数，0=禁用 |
+| 11   | deep_sleep_min | LIGHT 后到 DEEP 的分钟数，0=禁用 |
 
 **响应** (1 字节): 状态码
 
@@ -897,34 +904,17 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 
 ---
 
-### 0x42 MACRO_SET - 写入宏数据 (分包传输)
+### 0x40～0x43 宏命令
 
-宏数据可能较大，需要分包传输：
+CH592F 已使用动态 MeowFS，不采用“固定宏槽 + 24B 头 + Begin/End 写入”的旧协议。
 
-**序号 0 - 开始写入**:
+- `MACRO_INFO`：返回总容量、页大小、有效宏数、剩余字节数。
+- `MACRO_GET`：请求数据为 `offset_hi, offset_lo, len`，读取原始 MeowFS 字节。
+- `MACRO_SET sub=0`：请求页号；`0xFF` 表示擦除整个宏区。
+- `MACRO_SET sub=1`：请求数据为 `offset_hi, offset_lo, len, data...`，一次最多写 58B。
+- `MACRO_DEL`：`SUB` 为按有效条目排序的宏索引，只将 marker 改为删除标记。
 
-| 偏移 | 长度 | 字段   | 说明               |
-| :--- | :--- | :----- | :----------------- |
-| 0    | 1    | seq    | 固定为 0           |
-| 1    | 24   | header | kbd_macro_header_t |
-
-**序号 1~254 - 数据块**:
-
-| 偏移 | 长度 | 字段     | 说明           |
-| :--- | :--- | :------- | :------------- |
-| 0    | 1    | seq      | 包序号 (1-254) |
-| 1    | 1    | offset高 | 数据偏移高字节 |
-| 2    | 1    | offset低 | 数据偏移低字节 |
-| 3    | 1    | len      | 数据长度       |
-| 4    | N    | data     | 宏动作数据     |
-
-**序号 0xFF - 完成写入**:
-
-| 偏移 | 字段 | 说明        |
-| :--- | :--- | :---------- |
-| 0    | seq  | 固定为 0xFF |
-
-**响应**: [状态码, seq]
+Studio 负责读取、校验和压缩重写整个宏区。协议字段见 [HID 通讯协议](./hid.md) 和 [MeowFS](../meowfs.md)。
 
 ## 工作模式
 
@@ -934,7 +924,6 @@ KBD_RGB_Flash(0, 255, 0, 200);  // 绿色闪烁 200ms
 |----|------|------|
 | 0 | USB | USB 有线模式 |
 | 1 | BLE | 蓝牙无线模式 |
-| 2 | 2.4G | 2.4G 无线模式（预留，暂未实现） |
 
 ### 模式管理
 
@@ -945,7 +934,6 @@ KBD_Mode_Init(KBD_WORK_MODE_USB, &callbacks);
 // 切换模式
 KBD_Mode_Toggle();
 KBD_Mode_Switch(KBD_WORK_MODE_BLE);
-// KBD_Mode_Switch(KBD_WORK_MODE_2G4);  // 预留：2.4G 模式
 
 // 获取当前模式
 kbd_work_mode_t mode = KBD_Mode_Get();
@@ -967,29 +955,9 @@ KBD_Mode_BLE_Disconnect();
 KBD_Mode_BLE_ClearBonds();
 ```
 
-### 2.4G 模式（预留）
+### 2.4G
 
-::: info 预留功能
-2.4G 无线模式已在代码和数据结构中预留（`KBD_WORK_MODE_2G4 = 2`），但当前版本暂未实现。
-
-**预留位置：**
-- `kbd_mode_config.h`: `kbd_work_mode_t` 枚举中已注释预留
-- `dataflash.md`: `default_mode` 字段支持值 2（2.4G）
-- 模式管理器架构支持扩展新工作模式
-
-**实现方案：**
-CH592F 芯片内置 2.4G 射频功能，可直接实现 2.4G 无线通信，无需外部模块。计划支持两种工作方式：
-
-1. **键盘作为接收器**：键盘本身可工作在接收器模式，通过 USB 连接电脑，接收其他 2.4G 键盘的信号
-2. **独立接收器**：使用 CH592F 设计专用接收器（无按键等外设，仅无线接收功能），通过 USB 连接电脑
-
-**未来实现方向：**
-- 实现 CH592F 内置 2.4G 射频驱动
-- 实现 2.4G 专用的 HID 报告发送接口
-- 添加 2.4G 连接状态管理（配对、连接、断开等）
-- 扩展 `KBD_Mode_Switch()` 支持 2.4G 模式切换
-- 支持键盘/接收器两种角色的切换
-:::
+当前固件只实现 USB 和 BLE。`kbd_mode_config.h` 中保留的 2.4G 注释不构成可用功能，也没有接收器协议、配对流程或发布产物。
 
 ### 发送 HID 报告
 
@@ -1009,23 +977,23 @@ KBD_Mode_SendConsumerReport(0xCD);  // Play/Pause
 
 ### DataFlash 布局
 
-CH592F 内置 32KB DataFlash，当前策略为“宏大擦写、配置小擦写”：
+CH592F 内置 32KB DataFlash，当前策略为“动态宏区、配置小擦写、runtime 热数据独立轮转”：
 
 | 地址范围        | 大小 | 用途      |
 | :-------------- | :--- | :-------- |
 | 0x0000-0x0BFF | 3KB  | 配置槽轮转区（3 槽 × 1KB，按 256B 页差异擦写） |
 | 0x0C00-0x0FFF | 1KB  | runtime 热数据区（4 页 × 256B，保存高频层号） |
-| 0x1000-0x4FFF | 16KB | 宏数据区（按 4KB 块擦写） |
-| 0x7E00-0x7EFF | 256B | BLE SNV（配对信息） |
+| 0x1000-0x2FFF | 8KB | 动态 MeowFS 宏区（256B 页） |
+| 0x3000-0x6FFF | 16KB | 当前未使用 |
+| 0x7000-0x7FFF | 4KB | BLE SNV 所在保留擦除扇区 |
 
 说明：
 - `current_layer` 高频变化仅写 runtime 热数据页，不重写整份配置
 - 配置保存使用槽位轮转 + CRC 校验，降低磨损并提升掉电恢复能力
-- 宏区保持块级擦写，简化大数据写入逻辑
+- 宏以 `marker + action_count + actions` 可变长条目连续存放，Studio 负责压缩重写
 - 高频状态建议通过 TMOS 延时事件合并写入，避免在按键路径直接擦写 Flash
 
 详细布局与字段定义见 `docs/wireless/dataflash.md`。
-如需进一步拆分为 `base/keymap/runtime` 分区日志页，可参考 `docs/wireless/dataflash.md` 末尾“推荐优化方案（规划）”。
 TMOS 事件/定时/消息使用方式见 `docs/wireless/tmos.md`。
 
 ### API 使用
@@ -1051,10 +1019,12 @@ kbd_rgb_config_t *rgb = KBD_GetRgbConfig();
 
 ```c
 // kbd_mode_config.h
-#define KBD_LOW_POWER_ENABLE        1
-#define KBD_IDLE_SLEEP_TIMEOUT_MS   30000  // 30 秒无操作进入休眠
-#define KBD_WAKEUP_BY_KEY           1      // 按键唤醒
+#define KBD_LOW_POWER_ENABLE 1
+#define KBD_WAKEUP_BY_KEY    1
+#define KBD_WAKEUP_BY_USB    1
 ```
+
+实际超时不是编译期常量：`kbd_system_config_t.auto_sleep_min` 控制 LIGHT，`deep_sleep_min` 控制从 LIGHT 到 DEEP 的额外延时。默认均为 1 分钟，可在 Studio RGB 面板修改，`0` 表示禁用。
 
 ### 进入/退出睡眠
 

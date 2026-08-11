@@ -40,7 +40,7 @@ export default defineConfig({
       },
       {
         text: "📡 无线版",
-        link: "/wireless/",
+        link: "/wireless/manual",
         activeMatch: "/wireless/",
       },
       {
@@ -81,7 +81,7 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: "快速开始", link: "/wireless/" },
-          { text: "使用方式", link: "/usage#无线版-5key" },
+          { text: "完整使用手册", link: "/wireless/manual" },
           { text: "硬件复刻", link: "/wireless/make" },
           { text: "刷写固件", link: "/wireless/flash" },
           { text: "改键软件", link: "/wireless/remap" },

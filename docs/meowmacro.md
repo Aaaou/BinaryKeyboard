@@ -1,10 +1,6 @@
 # MeowMacro 宏语言
 
-MeowMacro 是 BinaryKeyboard Studio 内置的宏编辑语言，用于快速编写键盘宏。你可以在 Studio 的宏编辑器中切换到 **MeowMacro** 模式直接编写。
-
-::: tip 切换方式
-在宏编辑器右上角点击 **MeowMacro** 按钮即可切换到代码模式，支持语法高亮、自动补全和实时错误提示。
-:::
+MeowMacro 是 BinaryKeyboard Studio 的宏编辑语言。在宏编辑器右上角切换到 **MeowMacro** 模式后，可直接编辑脚本；编辑器提供高亮、补全和错误提示。
 
 ## 快速上手
 
@@ -94,9 +90,7 @@ up mouse:left           # 释放左键
 
 **支持的按键：**`mouse:left` `mouse:right` `mouse:middle` `mouse:back` `mouse:forward`
 
-::: tip 兼容语法
-`mouse left` / `mouse down left` / `mouse up left` 仍然可用，但推荐使用统一的 `tap`/`down`/`up` + `mouse:` 语法。
-:::
+`mouse left` / `mouse down left` / `mouse up left` 仍然可用。新脚本使用 `tap` / `down` / `up` 加 `mouse:` 语法。
 
 ### wheel — 滚轮
 
@@ -275,12 +269,9 @@ consumer browser_refresh
 
 | 参数 | 无线版 (CH592F) | 经典版 (CH552G) |
 |:-----|:---------------|:---------------|
-| 宏槽位数 | 8 | 2 |
-| 最大动作数 | 1000 | 31 |
-| 最大数据 | 2024 字节 | 62 字节 |
+| 宏槽位数 | 动态，受 8KB 总容量限制 | 动态，受 1KB 总容量限制 |
+| 单宏最大动作数 | 255 | 255 |
+| 总宏数据 | 8KB | 1KB |
 | 同时按键数 | 6 键 | 6 键 |
 
-::: info 经典版提示
-CH552G 每槽最多 31 个动作（约 15 次按键），适合编写简短的快捷宏。
-复杂的宏序列建议使用无线版。
-:::
+CH552G 和 CH592F 都使用动态 MeowFS；删除或替换宏会改变后续宏索引。需要跨设备迁移时先导出配置或宏文件。

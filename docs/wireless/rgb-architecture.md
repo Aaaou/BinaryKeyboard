@@ -2,7 +2,7 @@
 
 ## 概述
 
-本键盘 RGB 系统基于 WS2812 驱动，支持多种灯效模式、独立指示灯亮度，以及通过 HID 协议进行配置同步。
+RGB 由 WS2812 驱动。Studio 通过 HID 修改灯效、亮度、颜色、按键反馈和休眠参数。
 
 ---
 
@@ -54,14 +54,15 @@
 | color_r | uint8_t | 静态/呼吸/闪烁 颜色 R |
 | color_g | uint8_t | 静态/呼吸/闪烁 颜色 G |
 | color_b | uint8_t | 静态/呼吸/闪烁 颜色 B |
-| indicator_enabled | uint8_t | 状态指示开关 |
+| indicator_enabled | uint8_t | 状态指示字段；当前 `RGB_SET` 固定写为启用 |
 | indicator_brightness | uint8_t | 指示灯亮度 (0-255，最低 13) |
+| press_effect | uint8_t | 0=无，1=按下亮起渐灭，2=按下熄灭渐亮 |
 
 ### 灯效模式 (kbd_rgb_mode_t)
 
 | 值 | 模式 | 使用颜色 | 说明 |
 |----|------|----------|------|
-| 0 | OFF | - | 已取消，UI 不再提供 |
+| 0 | OFF | - | 按键灯关闭，状态指示仍可运行 |
 | 1 | STATIC | color_r/g/b | 固定颜色常亮 |
 | 2 | BREATHING | color_r/g/b | 亮度渐变循环 |
 | 3 | BLINK | color_r/g/b | 周期性开关 |
@@ -75,17 +76,17 @@
 ### 需要用户配置颜色的模式
 
 - **静态 / 呼吸 / 闪烁**：共用 `color_r`, `color_g`, `color_b`
-- UI 应提供调色盘或 hex 输入
+- Studio 提供调色盘和十六进制输入
 
 ### 预设颜色（无需用户配置）
 
 - **仅指示灯**：根据 `kbd_state_t` 选择颜色
-  - USB 已连接: 白
+  - USB 已连接: 白色短亮
   - BLE 未连接: 红（呼吸）
   - BLE 广播中: 蓝（呼吸）
-  - BLE 已连接: 绿
-  - 低电量: 红（快闪）
-- **层切换闪烁**：固件内 `layer_colors[5][3]` 固定 (蓝/绿/黄/紫/红)
+  - BLE 已连接: 绿色短亮
+  - 低电量: 橙红色快闪
+- **层切换闪烁**：固件内 `s_layer_colors[5][3]` 固定为蓝、绿、黄、紫、红
 
 ---
 
@@ -96,13 +97,13 @@
 | brightness | 按键灯、灯效主亮度 | 0 |
 | indicator_brightness | 指示灯（第一个 LED） | 13 (~5%) |
 
-仅指示灯模式（WS2812_LED_NUM==1）时，两者同步；多 LED 时可分别调节。
+仅有一颗 WS2812 时，只驱动指示灯；多颗时，按键灯和指示灯分别计算亮度。
 
 ---
 
 ## HID 协议
 
-- **RGB_GET**：返回 9 字节 `enabled,mode,brightness,speed,color_r,color_g,color_b,indicator_enabled,indicator_brightness`
-- **RGB_SET**：接收相同 9 字节，写入配置（需 CFG_SAVE 持久化）
+- **RGB_GET**：返回状态码加 12 字节配置：`enabled, mode, brightness, speed, color_r/g/b, indicator_enabled, indicator_brightness, press_effect, auto_sleep_min, deep_sleep_min`。
+- **RGB_SET**：接收 12 字节配置。固件校验长度后立即调用 `KBD_Config_Save()`；Studio 不需要再单独提交 RGB 配置。
 
 详见 [hid.md](./hid.md)。

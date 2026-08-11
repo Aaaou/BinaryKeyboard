@@ -1,6 +1,6 @@
 # MeowFS 宏存储系统
 
-MeowFS 是 BinaryKeyboard 当前统一使用的宏存储格式，用来替代固定槽位的大块宏区。它同时覆盖 `CH552G`、`CH592F` 和 `Studio`，让有线与无线设备都使用同一套动态宏模型。
+MeowFS 是 BinaryKeyboard 的宏存储格式，用于替代固定槽位的大块宏区。`CH552G`、`CH592F` 和 Studio 都按同一套动态宏模型处理它。
 
 ## 适用范围
 

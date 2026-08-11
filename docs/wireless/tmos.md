@@ -121,118 +121,26 @@ if (events & SYS_EVENT_MSG) {
 - 处理完消息必须 `tmos_msg_deallocate()`
 - `SYS_EVENT_MSG` 是系统事件，优先处理通常更稳
 
-## 推荐：用 TMOS 做 runtime 延迟保存（高频状态）
+## runtime 延迟保存的当前实现
 
-适用场景：
+`firmware/CH592F/keyboard/src/kbd_storage.c` 已实现 runtime 保存任务。它保存 `current_layer` 和 `last_mode`，不在按键路径直接擦写 DataFlash。
 
-- `current_layer`（高频变化）
-- 未来可扩展 `active_mode`
+| 项目 | 当前实现 |
+| :--- | :--- |
+| 任务事件 | `KBD_STORAGE_RUNTIME_SAVE_EVT = 0x0001` |
+| 延迟 | 默认 200ms |
+| 失败重试 | 默认 100ms |
+| 存储位置 | `0x0C00`～`0x0FFF` 的 4 页轮转区 |
+| 写入时机 | 层或工作模式变化后；切换模式、进入休眠时立即 flush |
 
-目标：
+调用链如下：
 
-- 不在切层路径直接擦写 DataFlash
-- 合并短时间内连续变化
-- 减少对 BLE/USB 响应的影响
+1. `KBD_SetCurrentLayer()` 或 `KBD_SetLastMode()` 更新 RAM 中的待保存状态。
+2. `KBD_Storage_RequestRuntimeSave()` 停止旧定时器并重新开始 200ms 计时。
+3. 任务到期后调用 `SaveRuntimeState()` 写入下一张 256B 页。
+4. 写失败时重新安排短延时重试。
 
-### 设计原则（简洁版）
-
-- `runtime` 才轮转（256B 页环）
-- 低频配置不做复杂轮转（按 `CFG_SAVE` 保存）
-- 写前比较，没变化不写
-- 用 TMOS 延时事件防抖（如 `150~300ms`）
-
-### 推荐事件定义
-
-```c
-#define KBD_STORAGE_RUNTIME_SAVE_EVT   0x0001
-```
-
-> 不要使用 `0x8000`，该位保留给 `SYS_EVENT_MSG`。
-
-### 推荐状态变量
-
-```c
-static tmosTaskID s_storage_task_id = TASK_NO_TASK;
-static uint8_t s_runtime_dirty = 0;
-static uint8_t s_runtime_pending_layer = 0;
-static uint8_t s_runtime_last_saved_layer = 0xFF;
-```
-
-### 推荐接口（可读性优先）
-
-```c
-void KBD_Storage_TMOS_Init(void);
-void KBD_Storage_RequestRuntimeSave(uint8_t layer);
-static uint16_t KBD_Storage_ProcessEvent(uint8_t task_id, uint16_t events);
-static void KBD_Storage_FlushRuntimeIfDirty(void);
-```
-
-### 调用流程
-
-1. `KBD_SetCurrentLayer(new_layer)` 只更新 RAM
-2. 若值变化，调用 `KBD_Storage_RequestRuntimeSave(new_layer)`
-3. `RequestRuntimeSave()` 仅做：
-   - 标记 `dirty`
-   - 更新 `pending_layer`
-   - 重启一次延时事件（防抖）
-4. TMOS 事件到期后执行实际 `SaveRuntime()`（256B 页轮转）
-
-### 代码模板（可直接改造）
-
-```c
-#define KBD_STORAGE_RUNTIME_SAVE_EVT  0x0001
-#define KBD_STORAGE_RUNTIME_SAVE_DELAY_MS  200
-
-static tmosTaskID s_storage_task_id = TASK_NO_TASK;
-static uint8_t s_runtime_dirty = 0;
-static uint8_t s_runtime_pending_layer = 0;
-static uint8_t s_runtime_last_saved_layer = 0xFF;
-
-static uint16_t KBD_Storage_ProcessEvent(uint8_t task_id, uint16_t events)
-{
-    (void)task_id;
-
-    if (events & KBD_STORAGE_RUNTIME_SAVE_EVT) {
-        if (s_runtime_dirty && s_runtime_pending_layer != s_runtime_last_saved_layer) {
-            if (KBD_Storage_SaveRuntimeLayer(s_runtime_pending_layer) == 0) {
-                s_runtime_last_saved_layer = s_runtime_pending_layer;
-                s_runtime_dirty = 0;
-            } else {
-                /* 写失败：短延时重试，避免阻塞当前路径 */
-                tmos_start_task(s_storage_task_id,
-                                KBD_STORAGE_RUNTIME_SAVE_EVT,
-                                MS1_TO_SYSTEM_TIME(100));
-            }
-        } else {
-            s_runtime_dirty = 0;
-        }
-        return (events ^ KBD_STORAGE_RUNTIME_SAVE_EVT);
-    }
-
-    return 0;
-}
-
-void KBD_Storage_TMOS_Init(void)
-{
-    s_storage_task_id = TMOS_ProcessEventRegister(KBD_Storage_ProcessEvent);
-}
-
-void KBD_Storage_RequestRuntimeSave(uint8_t layer)
-{
-    if (layer == s_runtime_last_saved_layer) {
-        return;  /* 无变化不写 */
-    }
-
-    s_runtime_pending_layer = layer;
-    s_runtime_dirty = 1;
-
-    /* 防抖：重启延时保存 */
-    tmos_stop_task(s_storage_task_id, KBD_STORAGE_RUNTIME_SAVE_EVT);
-    tmos_start_task(s_storage_task_id,
-                    KBD_STORAGE_RUNTIME_SAVE_EVT,
-                    MS1_TO_SYSTEM_TIME(KBD_STORAGE_RUNTIME_SAVE_DELAY_MS));
-}
-```
+自定义事件不得使用 `0x8000`，该位保留给 `SYS_EVENT_MSG`。
 
 ## TMOS 内存池（项目注意点）
 
@@ -242,13 +150,9 @@ void KBD_Storage_RequestRuntimeSave(uint8_t layer)
 __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 ```
 
-建议：
+保持 4 字节对齐。`BLE_MEMHEAP_SIZE` 不足时，消息分配和协议栈行为会异常；新增消息任务前应测量内存余量。
 
-- 保持 4 字节对齐
-- `BLE_MEMHEAP_SIZE` 不足时，消息分配/协议栈行为会异常
-- 若新增消息型任务，先观察内存余量
-
-## 常见坑（建议直接规避）
+## 常见问题
 
 ### 1. 在高频路径直接写 Flash
 
@@ -256,9 +160,7 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
 - 层切换/按键路径里直接 `EEPROM_ERASE/WRITE` 会放大延迟
 
-建议：
-
-- 改成 TMOS 延时事件写入（上面的模板）
+处理：使用现有 runtime 延迟保存路径，不要在按键路径写 Flash。
 
 ### 2. 忘记释放消息
 
@@ -266,9 +168,7 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
 - `tmos_msg_receive()` 后不 `tmos_msg_deallocate()` 会泄漏内存池
 
-建议：
-
-- 在 `SYS_EVENT_MSG` 分支固定写成“receive -> process -> deallocate”模板
+处理：在 `SYS_EVENT_MSG` 分支中按“receive → process → deallocate”顺序释放消息。
 
 ### 3. 事件位冲突
 
@@ -276,9 +176,7 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
 - 同一任务里多个事件用到相同 bit，会出现逻辑串扰
 
-建议：
-
-- 每个任务集中定义事件位（按 `0x0001/0x0002/0x0004...`）
+处理：在每个任务附近集中定义事件位，使用 `0x0001/0x0002/0x0004...`。
 
 ### 4. 使用 `0x8000` 作为自定义事件
 
@@ -286,9 +184,7 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
 - 与 `SYS_EVENT_MSG` 冲突
 
-建议：
-
-- `0x8000` 保留给系统消息事件
+处理：保留 `0x8000` 给系统消息事件。
 
 ### 5. 事件处理函数过长
 
@@ -296,12 +192,9 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 
 - 会影响 BLE/USB 响应及时性
 
-建议：
+处理：事件回调只做状态推进和短操作；长操作拆分或延后。
 
-- 事件回调只做状态推进与短操作
-- 长操作拆分或延后
-
-## 调试建议
+## 调试
 
 - 给每个 TMOS 任务记录 `taskID`（日志里打印一次）
 - 对关键事件打印节流日志（不要每次都打印）
@@ -317,4 +210,4 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 - WCH 产品页（CH592，官方资料入口）：<https://www.wch.cn/products/CH592.html>
 - 《CH58x BLE 软件开发参考手册》TMOS 章节（镜像，便于检索）：<https://manuals.plus/vi/bez-imeni/ch58x-ble-software-development-manual>
 
-> 本项目文档基于官方 TMOS 说明整理，并结合 `CH592F` 固件现有代码用法进行约束与建议。
+本文档以当前 CH592F 固件调用方式为准；WCH API 细节以官方资料为准。
