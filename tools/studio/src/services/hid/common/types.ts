@@ -18,6 +18,8 @@ export interface BatteryInfo {
   level: number;
   voltage: number;
   isCharging: boolean;
+  adcRaw?: number;
+  chargePinRaw?: number;
 }
 
 export interface HidDeviceEvent {

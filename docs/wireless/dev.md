@@ -8,6 +8,8 @@
 
 **仓库流程**：开发在 `dev` 分支进行，完成后 PR 到 `main`。
 
+电池 ADC、充电状态与 Studio BLE 状态修复的设计和验证记录见 [ADC 修复说明](./adc-fix.md)。
+
 ## 开发环境
 
 > 当前构建流程使用 CMake，可配合 VS Code、CLion 等 IDE 使用。

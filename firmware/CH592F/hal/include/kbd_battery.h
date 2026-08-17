@@ -9,16 +9,23 @@
  *
  * 硬件:
  * - PA14 (AIN4): VBAT 经 100K+100K 分压 (1/2) 后的 ADC 输入
- * - ADC PGA: 1/4x (-12dB)
+ * - ADC PGA: 1x (0dB)，与 WCH 外部分压参考实现一致
  * - PA15: VBAT_AD_EN, 高电平启动分压电路
+ *   当 KBD_VBAT_DIVIDER_ALWAYS_ON=1 时持续保持高电平，便于板级测量
  * - PA13: TP4054 CHRG 引脚 (开漏输出)
  *   - 低电平: 正在充电
  *   - 高阻态: 未充电 (内部上拉读高)
  *
  * 软件:
  * - 采样采用 TMOS 非阻塞状态机
+ * - 单次采样去掉极值，周期结果采用低通滤波，并复核异常大跳变
+ * - 电量按单节 LiPo 电压曲线估算；充电时补偿端电压抬升且不直接报 100%
  * - 读取接口返回最近一次缓存值
  * - 查询时会在后台补发刷新请求，不阻塞主循环
+ *
+ * 限制:
+ * - 本板没有电流采样或库仑计，百分比是电压估算值，不是精确 SOC
+ * - CHRG 高电平只能表示“当前未充电”，不能区分未插电和已经充满
  */
 
 /*============================================================================*/
@@ -65,10 +72,22 @@ uint8_t KBD_Battery_GetLevel(void);
 uint16_t KBD_Battery_GetVoltage_mV(void);
 
 /**
+ * @brief 获取最近一次采样的 ADC 原始平均值
+ * @return 未应用 ADC 校准偏移的 12 位原始计数 (0-4095)
+ */
+uint16_t KBD_Battery_GetAdcRaw(void);
+
+/**
  * @brief 获取充电状态
  * @return kbd_charge_state_t
  */
 kbd_charge_state_t KBD_Battery_GetChargeState(void);
+
+/**
+ * @brief 获取 TP4054 CHRG 引脚原始电平
+ * @return 0=低电平（充电中），1=高电平（未充电）
+ */
+uint8_t KBD_Battery_GetChargePinRaw(void);
 
 /**
  * @brief 获取电压 (0.1V 单位, 用于 HID 协议)
@@ -77,7 +96,8 @@ kbd_charge_state_t KBD_Battery_GetChargeState(void);
 uint8_t KBD_Battery_GetVoltage_dV(void);
 
 /**
- * @brief 进入低功耗：停止周期性采样，确保 VBAT 分压关闭
+ * @brief 进入低功耗：停止周期性采样
+ * @note 常开诊断版不会关闭 VBAT 分压
  */
 void KBD_Battery_Suspend(void);
 

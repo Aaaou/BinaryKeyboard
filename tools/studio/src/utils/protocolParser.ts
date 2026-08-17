@@ -430,11 +430,17 @@ export function parseReceiveFrame(frame: Uint8Array): {
     case Command.SYS_STATUS:
       if (len >= 6) {
         const mode = data[1] === 0 ? "USB" : "BLE";
-        const conn = data[2] === 1 ? "已连接" : "未连接";
+        const connectionStates = ["未连接", "广播中", "已连接", "挂起"];
+        const conn = connectionStates[data[2]] ?? `未知状态(${data[2]})`;
         const layer = data[3];
         const battery = data[4];
         const charging = data[5] ? "充电中" : "未充电";
         parsed += ` | ${mode} ${conn} | 层${layer + 1} | 电量 ${battery}% ${charging}`;
+        if (len >= 9) {
+          const adcRaw = data[6] | (data[7] << 8);
+          const chargePinRaw = data[8];
+          parsed += ` | ADC原始值 ${adcRaw} | CHRG原始值 ${chargePinRaw}`;
+        }
       }
       break;
 
@@ -530,6 +536,11 @@ export function parseReceiveFrame(frame: Uint8Array): {
         const voltageMv = data[3] | (data[4] << 8);
         const voltage = (voltageMv / 1000).toFixed(2);
         parsed += ` | ${battery}% ${charging} ${voltage}V`;
+        if (len >= 8) {
+          const adcRaw = data[5] | (data[6] << 8);
+          const chargePinRaw = data[7];
+          parsed += ` | ADC原始值 ${adcRaw} | CHRG原始值 ${chargePinRaw}`;
+        }
       }
       break;
 

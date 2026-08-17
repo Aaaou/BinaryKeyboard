@@ -133,16 +133,19 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 
 **请求**：`SUB=0x00, LEN=0`
 
-**响应**（`LEN=6`）
+**响应**（`LEN=9`；旧固件为 `LEN=6`）
 
 | `DATA` 偏移 | 大小 | 字段 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `0` | 1 | `status` | 状态码 |
 | `1` | 1 | `work_mode` | 当前模式（USB/BLE/...） |
-| `2` | 1 | `conn_state` | 连接状态 |
+| `2` | 1 | `conn_state` | 连接状态：`0=断开, 1=广播中, 2=已连接, 3=挂起` |
 | `3` | 1 | `current_layer` | 当前层 |
 | `4` | 1 | `battery_level` | 电量（0-100） |
 | `5` | 1 | `is_charging` | 充电状态（0/1） |
+| `6` | 1 | `adc_raw_lo` | 最近一次 ADC 原始平均值低字节 |
+| `7` | 1 | `adc_raw_hi` | 最近一次 ADC 原始平均值高字节 |
+| `8` | 1 | `charge_pin_raw` | TP4054 CHRG 原始电平：`0=低电平/充电中`，`1=高电平/未充电` |
 
 ### 3. 配置命令 `CFG_SAVE / CFG_LOAD / CFG_RESET`（`0x10/0x11/0x12`）
 
@@ -330,7 +333,7 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 
 **请求**：`SUB=0x00, LEN=0`
 
-**响应**（`LEN=5`）
+**响应**（`LEN=8`；旧固件为 `LEN=5`）
 
 | `DATA` 偏移 | 大小 | 字段 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -339,9 +342,18 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 | `2` | 1 | `charging` | `0=未充电, 1=充电中` |
 | `3` | 1 | `voltage_lo` | 电压毫伏低字节 |
 | `4` | 1 | `voltage_hi` | 电压毫伏高字节 |
+| `5` | 1 | `adc_raw_lo` | 最近一次 ADC 原始平均值低字节（未应用校准偏移） |
+| `6` | 1 | `adc_raw_hi` | 最近一次 ADC 原始平均值高字节（未应用校准偏移） |
+| `7` | 1 | `charge_pin_raw` | TP4054 CHRG 引脚原始电平：`0=低电平/充电中`，`1=高电平/未充电` |
 
 ::: info 字节序
-`voltage_mV` 在 `BATTERY` 响应中使用 **小端序**（LE）。
+`voltage_mV` 和 `adc_raw` 在 `BATTERY` 响应中使用 **小端序**（LE）。Studio 按 `LEN` 判断诊断字段是否存在，仍兼容只返回前 5 字节的旧固件。
+:::
+
+::: info 电压与电量算法
+CH592 按 WCH 外部分压参考方式使用 `0dB` 单端 ADC：丢弃首次转换，连续采样去掉一个最大值和一个最小值，再应用 ADC 粗校准、`1.05V` 参考值和 `100kΩ/100kΩ` 分压比。周期结果使用低通滤波；超过 `250mV` 的突变必须由第二组采样确认。
+
+电量由单节 LiPo 电压曲线估算。充电时先补偿 TP4054 造成的端电压抬升，并将结果限制在 `99%`；退出充电后，只有实测电压进入满电区才会得到 `100%`。由于硬件没有电流检测或库仑计，该百分比不是精确 SOC。`CHRG=1` 也只能表示 TP4054 当前没有拉低引脚，无法区分“未接入 VBUS”和“已经充电结束”。
 :::
 
 ### 13. `LOG_GET (0x71)`
@@ -468,7 +480,7 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 | `saveConfig()` | `CFG_SAVE` | 无 | `status` |
 | `loadConfig()` | `CFG_LOAD` | 无 | `status` |
 | `resetConfig()` | `CFG_RESET` | 无 | `status` |
-| `getBattery()` | `BATTERY` | 无 | `status + 4B` |
+| `getBattery()` | `BATTERY` | 无 | `status + 4B 电池信息 + 3B 原始诊断值` |
 | `getLogConfig()` | `LOG_GET` | 无 | `status + enabled` |
 | `setLogConfig()` | `LOG_SET` | `enabled(1B)` | `status` |
 
