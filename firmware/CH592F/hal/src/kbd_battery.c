@@ -53,6 +53,7 @@
 #define BAT_FULL_RELEASE_MV 4100u
 #define BAT_FULL_ASSERT_SAMPLES 3u
 #define BAT_FULL_RELEASE_SAMPLES 2u
+#define BAT_FULL_CHARGE_RELEASE_SAMPLES 10u
 
 /*============================================================================*/
 /*                              私有变量                                      */
@@ -292,7 +293,25 @@ static void battery_poll_charge_state(void)
   uint8_t raw = KBD_Battery_GetChargePinRaw();
   kbd_charge_state_t next_state = s_charge_state;
 
-  if (s_charge_state == BAT_CHG_CHARGING)
+  if (s_full_latched)
+  {
+    /*
+     * 满电后 TP4054 会因板载负载产生短暂补充充电脉冲。高电平稳定约 1 秒
+     * 即认为主充电已经结束；锁存期间忽略短低脉冲，避免状态灯再次跳变。
+     */
+    if (s_charge_state == BAT_CHG_CHARGING && raw != 0u)
+    {
+      if (++s_charge_candidate_samples >= BAT_FULL_CHARGE_RELEASE_SAMPLES)
+      {
+        next_state = BAT_CHG_NONE;
+      }
+    }
+    else
+    {
+      s_charge_candidate_samples = 0;
+    }
+  }
+  else if (s_charge_state == BAT_CHG_CHARGING)
   {
     if (raw != 0u)
     {
