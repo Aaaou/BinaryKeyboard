@@ -20,6 +20,8 @@
  * - 采样采用 TMOS 非阻塞状态机
  * - 单次采样去掉极值，周期结果采用低通滤波，并复核异常大跳变
  * - 电量按单节 LiPo 电压曲线估算；充电时补偿端电压抬升且不直接报 100%
+ * - 高压区经连续采样确认后锁定 100%，并通过回差避免满电百分比抖动
+ * - CHRG 稳定状态采用非对称滤波，避免充电末段补充充电造成状态灯跳变
  * - 读取接口返回最近一次缓存值
  * - 查询时会在后台补发刷新请求，不阻塞主循环
  *
@@ -78,13 +80,14 @@ uint16_t KBD_Battery_GetVoltage_mV(void);
 uint16_t KBD_Battery_GetAdcRaw(void);
 
 /**
- * @brief 获取充电状态
+ * @brief 获取滤波后的充电状态
+ * @note 进入充电约延迟 300ms，退出充电约延迟 10s
  * @return kbd_charge_state_t
  */
 kbd_charge_state_t KBD_Battery_GetChargeState(void);
 
 /**
- * @brief 获取 TP4054 CHRG 引脚原始电平
+ * @brief 获取 TP4054 CHRG 引脚瞬时原始电平
  * @return 0=低电平（充电中），1=高电平（未充电）
  */
 uint8_t KBD_Battery_GetChargePinRaw(void);

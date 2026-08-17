@@ -25,6 +25,7 @@
 /* TMOS 事件 */
 #define BAT_SAMPLE_EVT 0x0001
 #define BAT_PERIODIC_EVT 0x0002
+#define BAT_CHARGE_POLL_EVT 0x0004
 
 /* 采样时序 */
 #define BAT_SETTLE_MS 30u
@@ -37,6 +38,9 @@
 #define BAT_VOLTAGE_CONFIRM_MV 80u
 #define BAT_FILTER_OLD_WEIGHT 3u
 #define BAT_FILTER_TOTAL_WEIGHT 4u
+#define BAT_CHARGE_POLL_MS 100u
+#define BAT_CHARGE_ASSERT_SAMPLES 3u
+#define BAT_CHARGE_RELEASE_SAMPLES 100u
 
 /*
  * TP4054 充电时端电压会高于静置电压。没有电流采样和库仑计时，只能做
@@ -45,6 +49,10 @@
 #define BAT_CHARGING_VOLTAGE_BIAS_MV 40u
 #define BAT_CHARGING_LEVEL_MAX 99u
 #define BAT_LEVEL_HYSTERESIS_PCT 1u
+#define BAT_FULL_ASSERT_MV 4160u
+#define BAT_FULL_RELEASE_MV 4100u
+#define BAT_FULL_ASSERT_SAMPLES 3u
+#define BAT_FULL_RELEASE_SAMPLES 2u
 
 /*============================================================================*/
 /*                              私有变量                                      */
@@ -59,7 +67,12 @@ static uint8_t s_cached_level = 50;
 static uint8_t s_cache_ready = FALSE;
 static uint8_t s_level_ready = FALSE;
 static uint8_t s_sample_pending = FALSE;
+static uint16_t s_charge_candidate_samples = 0;
+static kbd_charge_state_t s_charge_state = BAT_CHG_NONE;
 static kbd_charge_state_t s_last_charge_state = BAT_CHG_NONE;
+static uint8_t s_full_assert_samples = 0;
+static uint8_t s_full_release_samples = 0;
+static uint8_t s_full_latched = FALSE;
 
 /*============================================================================*/
 /*                              LiPo 电压 → 百分比                            */
@@ -118,6 +131,11 @@ static uint8_t battery_level_from_voltage(uint16_t mv,
 {
   uint8_t level;
 
+  if (s_full_latched)
+  {
+    return 100u;
+  }
+
   if (charge_state == BAT_CHG_CHARGING &&
       mv > BAT_CHARGING_VOLTAGE_BIAS_MV)
   {
@@ -130,6 +148,43 @@ static uint8_t battery_level_from_voltage(uint16_t mv,
     level = BAT_CHARGING_LEVEL_MAX;
   }
   return level;
+}
+
+static void battery_update_full_latch(uint16_t mv)
+{
+  if (s_full_latched)
+  {
+    s_full_assert_samples = 0;
+    if (mv <= BAT_FULL_RELEASE_MV)
+    {
+      if (++s_full_release_samples >= BAT_FULL_RELEASE_SAMPLES)
+      {
+        s_full_latched = FALSE;
+        s_full_release_samples = 0;
+        LOG_I(TAG, "Full latch released at %umV", mv);
+      }
+    }
+    else
+    {
+      s_full_release_samples = 0;
+    }
+    return;
+  }
+
+  s_full_release_samples = 0;
+  if (mv >= BAT_FULL_ASSERT_MV)
+  {
+    if (++s_full_assert_samples >= BAT_FULL_ASSERT_SAMPLES)
+    {
+      s_full_latched = TRUE;
+      s_full_assert_samples = 0;
+      LOG_I(TAG, "Full latch asserted at %umV", mv);
+    }
+  }
+  else
+  {
+    s_full_assert_samples = 0;
+  }
 }
 
 static void battery_update_level(uint16_t mv, kbd_charge_state_t charge_state)
@@ -218,6 +273,65 @@ static void battery_schedule_periodic_refresh(void)
   {
     tmos_start_task(s_task_id, BAT_PERIODIC_EVT, MS1_TO_SYSTEM_TIME(BAT_PERIODIC_MS));
   }
+}
+
+static void battery_schedule_charge_poll(void)
+{
+#if KBD_HAS_CHARGE_DET
+  if (s_task_id != TASK_NO_TASK)
+  {
+    tmos_start_task(s_task_id, BAT_CHARGE_POLL_EVT,
+                    MS1_TO_SYSTEM_TIME(BAT_CHARGE_POLL_MS));
+  }
+#endif
+}
+
+static void battery_poll_charge_state(void)
+{
+#if KBD_HAS_CHARGE_DET
+  uint8_t raw = KBD_Battery_GetChargePinRaw();
+  kbd_charge_state_t next_state = s_charge_state;
+
+  if (s_charge_state == BAT_CHG_CHARGING)
+  {
+    if (raw != 0u)
+    {
+      if (++s_charge_candidate_samples >= BAT_CHARGE_RELEASE_SAMPLES)
+      {
+        next_state = BAT_CHG_NONE;
+      }
+    }
+    else
+    {
+      s_charge_candidate_samples = 0;
+    }
+  }
+  else
+  {
+    if (raw == 0u)
+    {
+      if (++s_charge_candidate_samples >= BAT_CHARGE_ASSERT_SAMPLES)
+      {
+        next_state = BAT_CHG_CHARGING;
+      }
+    }
+    else
+    {
+      s_charge_candidate_samples = 0;
+    }
+  }
+
+  if (next_state != s_charge_state)
+  {
+    s_charge_state = next_state;
+    s_charge_candidate_samples = 0;
+    if (s_cache_ready)
+    {
+      battery_update_level(s_cached_voltage_mv, s_charge_state);
+    }
+    LOG_I(TAG, "Charge state=%d raw=%u", s_charge_state, raw);
+  }
+#endif
 }
 
 static void battery_start_sample(void)
@@ -333,6 +447,7 @@ static void battery_finish_sample(void)
                     measured_mv + (BAT_FILTER_TOTAL_WEIGHT / 2u)) /
                    BAT_FILTER_TOTAL_WEIGHT);
   }
+  battery_update_full_latch(s_cached_voltage_mv);
   battery_update_level(s_cached_voltage_mv, KBD_Battery_GetChargeState());
   s_cache_ready = TRUE;
   s_sample_pending = FALSE;
@@ -380,10 +495,13 @@ void KBD_Battery_Init(void)
 #if KBD_HAS_CHARGE_DET
   /* PA13: 充电引脚, 上拉输入 (检测 TP4054 开漏输出) */
   GPIOA_ModeCfg(KBD_CHG_PIN, GPIO_ModeIN_PU);
+  s_charge_state = KBD_Battery_GetChargePinRaw() ? BAT_CHG_NONE
+                                                 : BAT_CHG_CHARGING;
 #endif
 
   KBD_Battery_RequestRefresh();
   battery_schedule_periodic_refresh();
+  battery_schedule_charge_poll();
   LOG_I(TAG, "Battery init: cached=%dmV calib=%d", s_cached_voltage_mv,
         s_adc_calib);
 }
@@ -434,7 +552,7 @@ uint8_t KBD_Battery_GetChargePinRaw(void)
 
 kbd_charge_state_t KBD_Battery_GetChargeState(void)
 {
-  return KBD_Battery_GetChargePinRaw() ? BAT_CHG_NONE : BAT_CHG_CHARGING;
+  return s_charge_state;
 }
 
 uint8_t KBD_Battery_GetVoltage_dV(void)
@@ -448,6 +566,7 @@ void KBD_Battery_Suspend(void)
   {
     tmos_stop_task(s_task_id, BAT_SAMPLE_EVT);
     tmos_stop_task(s_task_id, BAT_PERIODIC_EVT);
+    tmos_stop_task(s_task_id, BAT_CHARGE_POLL_EVT);
   }
 #if !KBD_VBAT_DIVIDER_ALWAYS_ON
   /* 低功耗版在休眠时关闭分压。 */
@@ -463,6 +582,7 @@ void KBD_Battery_Resume(void)
 #endif
   KBD_Battery_RequestRefresh();
   battery_schedule_periodic_refresh();
+  battery_schedule_charge_poll();
 }
 
 static uint16_t KBD_Battery_ProcessEvent(uint8_t task_id, uint16_t events)
@@ -483,6 +603,13 @@ static uint16_t KBD_Battery_ProcessEvent(uint8_t task_id, uint16_t events)
     }
     battery_schedule_periodic_refresh();
     return (events ^ BAT_PERIODIC_EVT);
+  }
+
+  if (events & BAT_CHARGE_POLL_EVT)
+  {
+    battery_poll_charge_state();
+    battery_schedule_charge_poll();
+    return (events ^ BAT_CHARGE_POLL_EVT);
   }
 
   return 0;

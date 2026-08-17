@@ -286,12 +286,13 @@ static void HandleSysStatus(const kbd_cmd_frame_t *frame)
   uint8_t resp[9];
   uint16_t adc_raw = KBD_Battery_GetAdcRaw();
   uint8_t charge_pin_raw = KBD_Battery_GetChargePinRaw();
+  kbd_charge_state_t charge_state = KBD_Battery_GetChargeState();
   resp[0] = KBD_RESP_OK;
   resp[1] = (uint8_t)DualMode_GetMode();
   resp[2] = (uint8_t)DualMode_GetConnState();
   resp[3] = KBD_GetCurrentLayer();
   resp[4] = KBD_Battery_GetLevel();
-  resp[5] = charge_pin_raw ? BAT_CHG_NONE : BAT_CHG_CHARGING;
+  resp[5] = (uint8_t)charge_state;
   resp[6] = (uint8_t)(adc_raw & 0xFF);
   resp[7] = (uint8_t)((adc_raw >> 8) & 0xFF);
   resp[8] = charge_pin_raw;
@@ -709,9 +710,10 @@ static void HandleBattery(const kbd_cmd_frame_t *frame)
   uint16_t mv = KBD_Battery_GetVoltage_mV();
   uint16_t adc_raw = KBD_Battery_GetAdcRaw();
   uint8_t charge_pin_raw = KBD_Battery_GetChargePinRaw();
+  kbd_charge_state_t charge_state = KBD_Battery_GetChargeState();
   resp[0] = KBD_RESP_OK;
   resp[1] = KBD_Battery_GetLevel();
-  resp[2] = charge_pin_raw ? BAT_CHG_NONE : BAT_CHG_CHARGING;
+  resp[2] = (uint8_t)charge_state;
   resp[3] = (uint8_t)(mv & 0xFF);
   resp[4] = (uint8_t)((mv >> 8) & 0xFF);
   resp[5] = (uint8_t)(adc_raw & 0xFF);
