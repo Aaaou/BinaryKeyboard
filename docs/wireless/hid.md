@@ -133,16 +133,19 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 
 **请求**：`SUB=0x00, LEN=0`
 
-**响应**（`LEN=6`）
+**响应**（`LEN=9`；旧固件为 `LEN=6`）
 
 | `DATA` 偏移 | 大小 | 字段 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `0` | 1 | `status` | 状态码 |
 | `1` | 1 | `work_mode` | 当前模式（USB/BLE/...） |
-| `2` | 1 | `conn_state` | 连接状态 |
+| `2` | 1 | `conn_state` | 连接状态：`0=断开, 1=广播中, 2=已连接, 3=挂起` |
 | `3` | 1 | `current_layer` | 当前层 |
 | `4` | 1 | `battery_level` | 电量（0-100） |
-| `5` | 1 | `is_charging` | 充电状态（0/1） |
+| `5` | 1 | `is_charging` | 滤波后的充电状态（0/1） |
+| `6` | 1 | `adc_raw_lo` | 最近一次 ADC 原始平均值低字节 |
+| `7` | 1 | `adc_raw_hi` | 最近一次 ADC 原始平均值高字节 |
+| `8` | 1 | `charge_pin_raw` | TP4054 CHRG 瞬时原始电平：`0=低`，`1=高` |
 
 ### 3. 配置命令 `CFG_SAVE / CFG_LOAD / CFG_RESET`（`0x10/0x11/0x12`）
 
@@ -330,18 +333,33 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 
 **请求**：`SUB=0x00, LEN=0`
 
-**响应**（`LEN=5`）
+**响应**（`LEN=8`；旧固件为 `LEN=5`）
 
 | `DATA` 偏移 | 大小 | 字段 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `0` | 1 | `status` | 状态码 |
 | `1` | 1 | `level` | 电量百分比 `0~100` |
-| `2` | 1 | `charging` | `0=未充电, 1=充电中` |
+| `2` | 1 | `charging` | 滤波后的状态：`0=未充电, 1=充电中` |
 | `3` | 1 | `voltage_lo` | 电压毫伏低字节 |
 | `4` | 1 | `voltage_hi` | 电压毫伏高字节 |
+| `5` | 1 | `adc_raw_lo` | 最近一次 ADC 原始平均值低字节（未应用校准偏移） |
+| `6` | 1 | `adc_raw_hi` | 最近一次 ADC 原始平均值高字节（未应用校准偏移） |
+| `7` | 1 | `charge_pin_raw` | TP4054 CHRG 引脚瞬时原始电平：`0=低`，`1=高` |
 
 ::: info 字节序
-`voltage_mV` 在 `BATTERY` 响应中使用 **小端序**（LE）。
+`voltage_mV` 和 `adc_raw` 在 `BATTERY` 响应中使用 **小端序**（LE）。Studio 按 `LEN` 判断诊断字段是否存在，仍兼容只返回前 5 字节的旧固件。
+:::
+
+::: info 电压与电量算法
+CH592 按 WCH 外部分压参考方式使用 `0dB` 单端 ADC：丢弃首次转换，连续采样去掉一个最大值和一个最小值，再应用 ADC 粗校准、`1.05V` 参考值和 `100kΩ/100kΩ` 分压比。周期结果使用低通滤波；超过 `250mV` 的突变必须由第二组采样确认。
+
+电量由单节 LiPo 电压曲线估算。充电时先补偿 TP4054 造成的端电压抬升，普通曲线结果最高限制为 `99%`；只有高压区连续确认满足满电锁存条件后才显示 `100%`。由于硬件没有电流检测或库仑计，该百分比不是精确 SOC。`CHRG=1` 也只能表示 TP4054 当前没有拉低引脚，无法区分“未接入 VBUS”和“已经充电结束”。
+
+为适配样板约 `4.17~4.18V` 的实测满充平台，高压区另有满电锁存：`4.16V` 以上连续 3 次有效采样后显示 `100%`，降到 `4.10V` 以下连续 2 次后解除。阈值之间的回差用于避免满电百分比随采样误差反复变化。
+
+满电锁存后，CHRG 高电平稳定约 `1s` 即将稳定充电状态切换为“未充电”。随后 TP4054 因板载负载产生的短低电平补充充电脉冲只保留在 `charge_pin_raw` 中，不会重新改变稳定状态或 RGB；满电锁存解除后恢复普通的 `300ms` 进入、`10s` 退出判定。
+
+充电末段 TP4054 可能因终止和板载负载进入短周期补充充电，CHRG 原始电平会在 `0/1` 间切换。固件每 `100ms` 采样 CHRG：连续低电平约 `300ms` 后进入“充电中”，连续高电平约 `10s` 后退出“充电中”。`charging` 使用该稳定状态，RGB 也以它为准；`charge_pin_raw` 保留瞬时电平用于诊断，因此两者在退出延迟期间可以暂时不同。
 :::
 
 ### 13. `LOG_GET (0x71)`
@@ -468,7 +486,7 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 | `saveConfig()` | `CFG_SAVE` | 无 | `status` |
 | `loadConfig()` | `CFG_LOAD` | 无 | `status` |
 | `resetConfig()` | `CFG_RESET` | 无 | `status` |
-| `getBattery()` | `BATTERY` | 无 | `status + 4B` |
+| `getBattery()` | `BATTERY` | 无 | `status + 4B 电池信息 + 3B 原始诊断值` |
 | `getLogConfig()` | `LOG_GET` | 无 | `status + enabled` |
 | `setLogConfig()` | `LOG_SET` | `enabled(1B)` | `status` |
 

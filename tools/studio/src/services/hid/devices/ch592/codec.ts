@@ -180,13 +180,20 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseSysStatus(resp: DataView): DeviceStatus {
     const d = this.expectOk(resp, 'SYS_STATUS');
-    return {
+    const status: DeviceStatus = {
       workMode: resp.getUint8(d + 1),
       connectionState: resp.getUint8(d + 2),
       currentLayer: resp.getUint8(d + 3),
       batteryLevel: resp.getUint8(d + 4),
       isCharging: resp.getUint8(d + 5) !== 0,
     };
+
+    if (resp.getUint8(2) >= 9) {
+      status.adcRaw = resp.getUint16(d + 6, true);
+      status.chargePinRaw = resp.getUint8(d + 8);
+    }
+
+    return status;
   }
 
   parseKeymap(resp: DataView): { numLayers: number; currentLayer: number; defaultLayer: number; layer: LayerConfig } {
@@ -297,11 +304,18 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseBatteryInfo(resp: DataView): BatteryInfo {
     const d = this.expectOk(resp, 'BATTERY');
-    return {
+    const info: BatteryInfo = {
       level: resp.getUint8(d + 1),
       isCharging: resp.getUint8(d + 2) !== 0,
       voltage: resp.getUint16(d + 3, true) / 1000,
     };
+
+    if (resp.getUint8(2) >= 8) {
+      info.adcRaw = resp.getUint16(d + 5, true);
+      info.chargePinRaw = resp.getUint8(d + 7);
+    }
+
+    return info;
   }
 
   parseLogConfig(resp: DataView): LogConfig {

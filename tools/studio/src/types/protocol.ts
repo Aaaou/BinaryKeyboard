@@ -456,6 +456,8 @@ export interface DeviceStatus {
   currentLayer: number;
   batteryLevel: number;
   isCharging: boolean;
+  adcRaw?: number;
+  chargePinRaw?: number;
 }
 
 /** HID 命令帧 */
