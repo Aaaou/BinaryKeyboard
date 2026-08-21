@@ -39,6 +39,12 @@ typedef enum {
     RX_CONTROL_POLL_RATE,
 } receiver_control_t;
 
+typedef enum {
+    RX_FILTER_BINDABLE = 0,
+    RX_FILTER_RECONNECT,
+    RX_FILTER_ACTIVE,
+} receiver_filter_mode_t;
+
 typedef struct {
     USB_KeyboardReport_t items[RX_REPORT_QUEUE_DEPTH];
     uint8_t head;
@@ -193,20 +199,22 @@ static int save_nv(void)
     return 0;
 }
 
-static void apply_filter(bool pairing)
+static void apply_filter(receiver_filter_mode_t mode)
 {
     memset(&s_speed_item, 0, sizeof(s_speed_item));
-    /* WCH uses ID 7 only while accepting a binding. After SUCCESS the Host
-     * speed list must select the assigned device ID, otherwise it remains in
-     * the bindable schedule and loops SUCCESS -> timeout -> SUCCESS. */
-    s_speed_item.deviceId = pairing ? RF_ROLE_BOUND_ID : s_nv.device_id;
-    s_speed_item.rssi = pairing ? -70 : 0;
+    /* WCH's Host first reconnects through binding ID 7 while filtering the
+     * saved peer, then switches to the assigned device ID after SUCCESS. */
+    s_speed_item.deviceId = mode == RX_FILTER_ACTIVE
+        ? s_nv.device_id : RF_ROLE_BOUND_ID;
+    s_speed_item.rssi = mode == RX_FILTER_BINDABLE ? -70 : 0;
     /* WCH's reference dongle uses devType=0 in both the bindable and
      * peer-filtered Host lists. Device type remains part of the application
      * frame contract; the RFBound filter must not reject a valid keyboard
      * during the bind transaction. */
     s_speed_item.devType = 0u;
-    if (!pairing) memcpy(s_speed_item.peerInfo, s_nv.peer, sizeof(s_nv.peer));
+    if (mode != RX_FILTER_BINDABLE) {
+        memcpy(s_speed_item.peerInfo, s_nv.peer, sizeof(s_nv.peer));
+    }
     RFBound_SetSpeedType(&s_speed_list);
 }
 
@@ -257,7 +265,7 @@ static int start_host(bool pairing)
 {
     rfBoundHost_t host;
     memset(&host, 0, sizeof(host));
-    apply_filter(pairing);
+    apply_filter(pairing ? RX_FILTER_BINDABLE : RX_FILTER_RECONNECT);
     host.periTime = 8;
     host.hop = RF_HOP_MANUF_MODE;
     /* Match WCH's CH592 reference dongle (dongle/APP/rf.c). */
@@ -440,7 +448,7 @@ static void process_binding_save(void)
     SYS_RecoverIrq(irq);
     if (memcmp(s_nv.peer, pending_peer, sizeof(s_nv.peer)) == 0 &&
         s_nv.device_id == pending_device_id) {
-        apply_filter(false);
+        apply_filter(RX_FILTER_ACTIVE);
         s_has_sequence = false;
         s_last_valid_rx = 0u;
         return;
@@ -451,7 +459,7 @@ static void process_binding_save(void)
     memcpy(s_nv.peer, pending_peer, sizeof(s_nv.peer));
     s_nv.device_id = pending_device_id;
     if (save_nv() == 0) {
-        apply_filter(false);
+        apply_filter(RX_FILTER_ACTIVE);
         s_has_sequence = false;
         s_last_valid_rx = 0u;
         /* The current RFBound Host remains active. Switching its speed list
@@ -490,6 +498,9 @@ static void process_control(void)
     } else if (control == RX_CONTROL_PAIR_CLEAR) {
         s_release_pending = true;
         stop_host();
+        SYS_DisableAllIrq(&irq);
+        s_binding_pending = false;
+        SYS_RecoverIrq(irq);
         uint8_t old_peer[6];
         uint8_t old_device_id = s_nv.device_id;
         memcpy(old_peer, s_nv.peer, sizeof(old_peer));
@@ -498,7 +509,14 @@ static void process_control(void)
         s_has_sequence = false;
         if (save_nv() == 0) {
             if (old_device_id <= 6u) RFRole_ClearRxData(old_device_id);
-            result = start_host(true);
+            s_last_valid_rx = 0u;
+            s_state = KBD_RADIO_PAIR_UNBOUND;
+            s_host_startup_state = 0u;
+            s_host_startup_result = 0u;
+            /* Manual clear is a stable state. Do not immediately rebind to
+             * a still-powered old keyboard; pairing requires an explicit
+             * RADIO_PAIR_START command. */
+            result = 0;
         } else {
             memcpy(s_nv.peer, old_peer, sizeof(s_nv.peer));
             s_nv.device_id = old_device_id;
