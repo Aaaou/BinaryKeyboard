@@ -39,6 +39,8 @@ export const useDeviceStore = defineStore("device", () => {
     explicitSave: false,
     wireless: false,
     iap: false,
+    radio2g4: false,
+    receiverRole: false,
   };
 
   // ========================================
@@ -157,6 +159,7 @@ export const useDeviceStore = defineStore("device", () => {
   const supportsFactoryReset = computed(() => capabilities.value.reset);
   const supportsExplicitSave = computed(() => capabilities.value.explicitSave);
   const supportsWireless = computed(() => capabilities.value.wireless);
+  const supports2g4 = computed(() => capabilities.value.radio2g4);
 
   /** 键盘类型名称 */
   const keyboardTypeName = computed(() => {
@@ -660,6 +663,7 @@ export const useDeviceStore = defineStore("device", () => {
     supportsFactoryReset,
     supportsExplicitSave,
     supportsWireless,
+    supports2g4,
     keyboardTypeName,
     actualKeyCount,
     isDevFirmware,

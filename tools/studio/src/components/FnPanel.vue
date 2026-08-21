@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { showToast } from '@/services/toastService';
 import { FnAction } from '@/types/protocol';
@@ -34,7 +34,7 @@ const deviceStore = useDeviceStore();
 const isAutoSaving = ref(false);
 const hasPendingSave = ref(false);
 
-const fnActionOptions = [
+const baseFnActionOptions = [
   { value: FnAction.NONE, label: '无动作' },
   { value: FnAction.MODE_TOGGLE, label: '切换模式' },
   { value: FnAction.BLE_CLEAR_BONDS, label: '清除配对' },
@@ -47,6 +47,11 @@ const fnActionOptions = [
   { value: FnAction.LAYER_PREV, label: '上一层' },
   { value: FnAction.SLEEP, label: '休眠' },
 ];
+
+const fnActionOptions = computed(() => [
+  ...baseFnActionOptions,
+  ...(deviceStore.supports2g4 ? [{ value: FnAction.RADIO_2G4_PAIR, label: '进入 2.4G 配码' }] : []),
+]);
 
 async function autoSaveFn() {
   if (isAutoSaving.value) {

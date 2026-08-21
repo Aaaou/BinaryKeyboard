@@ -8,6 +8,7 @@ export function getCh592UiDefinition(capabilities: DeviceCapabilities): DeviceUi
     ...(capabilities.multiLayer ? ['layer-panel'] as const : []),
     ...(capabilities.fnKeys ? ['fn-panel'] as const : []),
     ...(capabilities.rgb ? ['rgb-panel'] as const : []),
+    ...(capabilities.radio2g4 ? ['wireless-panel'] as const : []),
     'actions-panel',
     'debug-terminal',
   ];

@@ -48,6 +48,7 @@ extern void USB_Config_SendResponse(uint8_t cmd, uint8_t *data, uint8_t len);
 
 static void HandleSysInfo(const kbd_cmd_frame_t *frame);
 static void HandleSysStatus(const kbd_cmd_frame_t *frame);
+static void HandleRadioCaps(const kbd_cmd_frame_t *frame);
 static void HandleCfgSave(const kbd_cmd_frame_t *frame);
 static void HandleCfgLoad(const kbd_cmd_frame_t *frame);
 static void HandleCfgReset(const kbd_cmd_frame_t *frame);
@@ -93,6 +94,20 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
     break;
   case KBD_CMD_SYS_STATUS:
     HandleSysStatus(frame);
+    break;
+  case KBD_CMD_RADIO_CAPS:
+    HandleRadioCaps(frame);
+    break;
+  case KBD_CMD_RADIO_PAIR_STATUS:
+  case KBD_CMD_RADIO_PAIR_START:
+  case KBD_CMD_RADIO_PAIR_CANCEL:
+  case KBD_CMD_RADIO_PAIR_CLEAR:
+  case KBD_CMD_RADIO_POLL_RATE_GET:
+  case KBD_CMD_RADIO_POLL_RATE_SET:
+    {
+      uint8_t resp[1] = {KBD_RESP_ERR_INVALID};
+      KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
+    }
     break;
 
   /* 配置管理 */
@@ -248,8 +263,8 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data,
  * [11] 键盘类型 (kbd_type_t)
  * [12] 实际按键数 (当前类型)
  * [13] FN 键数量
- * [14] 保留
- * [15] 保留
+ * [14] 2.4G RF backend 已启用 (0=当前 BLE-only 构建)
+ * [15] 设备角色 (0=键盘, 1=接收器)
  * [16] 保留
  * [17] 保留
  */
@@ -270,7 +285,7 @@ static void HandleSysInfo(const kbd_cmd_frame_t *frame)
   resp[11] = (uint8_t)KBD_GetType(); /* 键盘类型 */
   resp[12] = KBD_GetTotalKeyCount(); /* 实际键位数 */
   resp[13] = KBD_FN_NUM_KEYS;        /* FN 键数量 */
-  resp[14] = 0;
+  resp[14] = 0; /* RF FAST backend is not linked in this target. */
   resp[15] = 0;
   resp[16] = 0;
   resp[17] = 0;
@@ -299,6 +314,18 @@ static void HandleSysStatus(const kbd_cmd_frame_t *frame)
   resp[8] = charge_pin_raw;
 
   KBD_Command_SendResponse(KBD_CMD_SYS_STATUS, 0, resp, 9);
+}
+
+/*
+ * Contract probe for Studio. RF FAST is not linked by the shipping keyboard
+ * target yet, so declare the capability explicitly instead of accepting pairing
+ * commands that would never reach a receiver.
+ */
+static void HandleRadioCaps(const kbd_cmd_frame_t *frame)
+{
+  uint8_t resp[4] = {KBD_RESP_OK, 0, 0, 0};
+  (void)frame;
+  KBD_Command_SendResponse(KBD_CMD_RADIO_CAPS, 0, resp, sizeof(resp));
 }
 
 /**

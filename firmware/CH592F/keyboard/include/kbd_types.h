@@ -232,6 +232,8 @@ extern "C"
     /* 系统 0x40-0x4F */
     KBD_FN_SLEEP = 0x40,      /**< 进入睡眠模式 */
     KBD_FN_BOOTLOADER = 0x41, /**< 进入 Bootloader */
+    /* 2.4G RF backend is intentionally capability-gated; current builds do not enable it. */
+    KBD_FN_2G4_PAIR = 0x42,   /**< 进入 2.4G 配码（仅 RF-enabled 构建） */
   } kbd_fn_action_t;
 
   /**
@@ -452,6 +454,14 @@ extern "C"
     /* 系统命令 0x01-0x0F */
     KBD_CMD_SYS_INFO = 0x01,   /**< 获取设备信息 */
     KBD_CMD_SYS_STATUS = 0x02, /**< 获取运行状态 */
+    /* 2.4G Vendor HID contract. Current BLE-only builds report RADIO_CAPS.enabled=0. */
+    KBD_CMD_RADIO_CAPS = 0x03,
+    KBD_CMD_RADIO_PAIR_STATUS = 0x04,
+    KBD_CMD_RADIO_PAIR_START = 0x05,
+    KBD_CMD_RADIO_PAIR_CANCEL = 0x06,
+    KBD_CMD_RADIO_PAIR_CLEAR = 0x07,
+    KBD_CMD_RADIO_POLL_RATE_GET = 0x08,
+    KBD_CMD_RADIO_POLL_RATE_SET = 0x09,
 
     /* 配置管理 0x10-0x1F */
     KBD_CMD_CFG_SAVE = 0x10,  /**< 保存配置到 Flash */

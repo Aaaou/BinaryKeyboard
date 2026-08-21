@@ -48,6 +48,27 @@ export interface HidOptionalOperations {
   getMacroData?: (slot: number) => Promise<MacroData>;
   setMacroData?: (slot: number, macro: MacroData) => Promise<void>;
   deleteMacro?: (slot: number) => Promise<void>;
+  getRadioCapabilities?: () => Promise<RadioCapabilities>;
+  getPairStatus?: () => Promise<PairStatus>;
+  startPairing?: () => Promise<void>;
+  cancelPairing?: () => Promise<void>;
+  clearPairing?: (force?: boolean) => Promise<void>;
+  getPollRate?: () => Promise<number>;
+  setPollRate?: (rate: number) => Promise<void>;
+}
+
+export interface RadioCapabilities {
+  role: 'keyboard' | 'receiver';
+  enabled: boolean;
+  pollRates: number[];
+}
+
+export type PairState = 'unbound' | 'pairing' | 'bound' | 'connected' | 'inconsistent' | 'unsupported';
+
+export interface PairStatus {
+  state: PairState;
+  session: number;
+  deviceId: number;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {
@@ -68,6 +89,13 @@ export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, stri
   getMacroData: '宏数据读取',
   setMacroData: '宏数据写入',
   deleteMacro: '宏删除',
+  getRadioCapabilities: '2.4G 能力读取',
+  getPairStatus: '配码状态读取',
+  startPairing: '开始配码',
+  cancelPairing: '取消配码',
+  clearPairing: '清除配码',
+  getPollRate: '轮询率读取',
+  setPollRate: '轮询率设置',
 };
 
 export interface HidAdapter {

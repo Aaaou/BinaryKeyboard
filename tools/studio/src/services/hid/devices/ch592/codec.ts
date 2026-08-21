@@ -27,7 +27,7 @@ import {
 } from '@/types/protocol';
 import { FIRMWARE_VERSION_META } from '@/generated/versionConfig';
 import { parseLogFrame, parseReceiveFrame, parseSendFrame } from '@/utils/protocolParser';
-import type { BatteryInfo, HidOptionalOperations } from '../../common/types';
+import type { BatteryInfo, HidOptionalOperations, RadioCapabilities, PairStatus } from '../../common/types';
 import type {
   CodecInboundPacket,
   CodecTransport,
@@ -63,7 +63,7 @@ interface MeowFsCache {
 export class Ch592Codec implements DeviceCodec<DataView> {
   readonly protocol = DeviceProtocol.CH592;
   readonly protocolLabel = 'CH592F HID';
-  readonly capabilities = CH592_CAPABILITIES;
+  private capabilities = CH592_CAPABILITIES;
   readonly chipFamily = FIRMWARE_VERSION_META.CH592F.chipFamily;
   private meowfsCache: MeowFsCache | null = null;
   private supportsSeamlessWake = false;
@@ -71,6 +71,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   resetState(): void {
     this.meowfsCache = null;
     this.supportsSeamlessWake = false;
+    this.capabilities = CH592_CAPABILITIES;
   }
 
   getOptionalOperations(transport: CodecTransport<DataView>): HidOptionalOperations {
@@ -92,6 +93,13 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       getMacroData: (slot) => this.getMacroData(transport, slot),
       setMacroData: (slot, macro) => this.setMacroData(transport, slot, macro),
       deleteMacro: (slot) => this.deleteMacro(transport, slot),
+      getRadioCapabilities: () => this.getRadioCapabilities(transport),
+      getPairStatus: () => this.getPairStatus(transport),
+      startPairing: () => this.runOkCommand(transport, Command.RADIO_PAIR_START, 'RADIO_PAIR_START'),
+      cancelPairing: () => this.runOkCommand(transport, Command.RADIO_PAIR_CANCEL, 'RADIO_PAIR_CANCEL'),
+      clearPairing: (force = false) => this.runOkCommand(transport, Command.RADIO_PAIR_CLEAR, 'RADIO_PAIR_CLEAR'),
+      getPollRate: () => this.getPollRate(transport),
+      setPollRate: (rate) => this.setPollRate(transport, rate),
     };
   }
 
@@ -176,7 +184,11 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       fnKeyCount: resp.getUint8(d + 13),
       protocol: this.protocol,
       protocolLabel: this.protocolLabel,
-      capabilities: this.capabilities,
+      capabilities: {
+        ...this.capabilities,
+        radio2g4: resp.getUint8(d + 14) !== 0,
+        receiverRole: resp.getUint8(d + 15) === 1,
+      },
     };
   }
 
@@ -450,6 +462,35 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   private async getBattery(transport: CodecTransport<DataView>): Promise<BatteryInfo> {
     const resp = await this.sendCommand(transport, Command.BATTERY);
     return this.parseBatteryInfo(resp);
+  }
+
+  private async getRadioCapabilities(transport: CodecTransport<DataView>): Promise<RadioCapabilities> {
+    const resp = await this.sendCommand(transport, Command.RADIO_CAPS);
+    const d = this.expectOk(resp, 'RADIO_CAPS');
+    const enabled = resp.getUint8(d + 1) !== 0;
+    const role = resp.getUint8(d + 2) === 1 ? 'receiver' : 'keyboard';
+    const count = Math.min(resp.getUint8(d + 3), 4);
+    const pollRates = Array.from({ length: count }, (_, i) => resp.getUint16(d + 4 + i * 2, true));
+    return { enabled, role, pollRates };
+  }
+
+  private async getPairStatus(transport: CodecTransport<DataView>): Promise<PairStatus> {
+    const resp = await this.sendCommand(transport, Command.RADIO_PAIR_STATUS);
+    const d = this.expectOk(resp, 'RADIO_PAIR_STATUS');
+    const states: PairStatus['state'][] = ['unbound', 'pairing', 'bound', 'connected', 'inconsistent', 'unsupported'];
+    return { state: states[resp.getUint8(d + 1)] ?? 'unsupported', session: resp.getUint8(d + 2), deviceId: resp.getUint32(d + 3, true) };
+  }
+
+  private async getPollRate(transport: CodecTransport<DataView>): Promise<number> {
+    const resp = await this.sendCommand(transport, Command.RADIO_POLL_RATE_GET);
+    const d = this.expectOk(resp, 'RADIO_POLL_RATE_GET');
+    return resp.getUint16(d + 1, true);
+  }
+
+  private async setPollRate(transport: CodecTransport<DataView>, rate: number): Promise<void> {
+    if (![125, 250, 500, 1000].includes(rate)) throw new Error('轮询率必须为 125/250/500/1000 Hz');
+    const resp = await this.sendCommand(transport, Command.RADIO_POLL_RATE_SET, 0, new Uint8Array([rate & 0xff, rate >> 8]));
+    this.expectOk(resp, 'RADIO_POLL_RATE_SET');
   }
 
   private async getLogConfig(transport: CodecTransport<DataView>): Promise<LogConfig> {

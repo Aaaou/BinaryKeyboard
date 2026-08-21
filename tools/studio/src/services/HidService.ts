@@ -6,7 +6,7 @@
 import type { DeviceInfo, DeviceStatus, FnKeyConfig, KeymapConfig, LogConfig, RgbConfig, MacroOverview, MacroHeader, MacroData, OsModeConfig } from '@/types/protocol';
 import { showToast } from '@/services/toastService';
 import { createHidAdapters } from './hid/registry';
-import type { BatteryInfo, HidAdapter, HidDeviceEventHandler, HidOptionalOperations } from './hid/common/types';
+import type { BatteryInfo, HidAdapter, HidDeviceEventHandler, HidOptionalOperations, PairStatus, RadioCapabilities } from './hid/common/types';
 import { OPTIONAL_OPERATION_LABELS } from './hid/common/types';
 
 const ADAPTERS: HidAdapter[] = createHidAdapters();
@@ -252,6 +252,34 @@ export class HidService {
 
   async deleteMacro(slot: number): Promise<void> {
     await this.requireOptionalOperation('deleteMacro')(slot);
+  }
+
+  async getRadioCapabilities(): Promise<RadioCapabilities> {
+    return this.requireOptionalOperation('getRadioCapabilities')();
+  }
+
+  async getPairStatus(): Promise<PairStatus> {
+    return this.requireOptionalOperation('getPairStatus')();
+  }
+
+  async startPairing(): Promise<void> {
+    await this.requireOptionalOperation('startPairing')();
+  }
+
+  async cancelPairing(): Promise<void> {
+    await this.requireOptionalOperation('cancelPairing')();
+  }
+
+  async clearPairing(force = false): Promise<void> {
+    await this.requireOptionalOperation('clearPairing')(force);
+  }
+
+  async getPollRate(): Promise<number> {
+    return this.requireOptionalOperation('getPollRate')();
+  }
+
+  async setPollRate(rate: number): Promise<void> {
+    await this.requireOptionalOperation('setPollRate')(rate);
   }
 
   /** 获取 IAP 传输接口 (用于固件更新) */

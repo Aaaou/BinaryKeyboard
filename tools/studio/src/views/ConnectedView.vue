@@ -22,6 +22,8 @@ import KeyboardStatus from '@/components/KeyboardStatus.vue';
 import LayerPanel from '@/components/LayerPanel.vue';
 import FnPanel from '@/components/FnPanel.vue';
 import RgbPanel from '@/components/RgbPanel.vue';
+import WirelessPanel from '@/components/WirelessPanel.vue';
+import WirelessEntry from '@/components/WirelessEntry.vue';
 import RgbEntry from '@/components/RgbEntry.vue';
 import ConfigLibraryEntry from '@/components/ConfigLibraryEntry.vue';
 import ConfigLibraryPanel from '@/components/ConfigLibraryPanel.vue';
@@ -59,6 +61,7 @@ const configLibraryVisible = ref(false);
 const configLibraryRefreshKey = ref(0);
 const deviceInfoVisible = ref(false);
 const rgbPanelVisible = ref(false);
+const wirelessPanelVisible = ref(false);
 const kbCardRef = ref<HTMLElement | null>(null);
 const earStyle = ref<Record<string, string>>({});
 
@@ -150,6 +153,7 @@ const currentUiDefinition = computed(() => {
 const showLayerPanel = computed(() => hasUiSection(currentUiDefinition.value, 'layer-panel'));
 const showFnPanel = computed(() => previewKeyboardType.value < 0 && hasUiSection(currentUiDefinition.value, 'fn-panel'));
 const showRgbPanel = computed(() => previewKeyboardType.value < 0 && hasUiSection(currentUiDefinition.value, 'rgb-panel'));
+const showWirelessPanel = computed(() => previewKeyboardType.value < 0 && hasUiSection(currentUiDefinition.value, 'wireless-panel'));
 const showMacroPanel = computed(() => previewKeyboardType.value < 0 && deviceStore.supportsMacroActions);
 const showConfigLibrary = computed(() => previewKeyboardType.value < 0);
 const showResetButton = computed(() => previewKeyboardType.value < 0 && deviceStore.supportsFactoryReset);
@@ -259,6 +263,7 @@ function onCatAction(action: string) {
         <LayerPanel v-if="showLayerPanel" :keyboard-type="currentKeyboardType" :preview-mode="previewKeyboardType >= 0" />
         <FnPanel v-if="showFnPanel" />
         <RgbEntry v-if="showRgbPanel" @open="rgbPanelVisible = true" />
+        <WirelessEntry v-if="showWirelessPanel" @open="wirelessPanelVisible = true" />
         <ConfigLibraryEntry v-if="showConfigLibrary" :refresh-key="configLibraryRefreshKey" @open="configLibraryVisible = true" />
         <MacroPanel v-if="showMacroPanel" @edit="openMacroEditor" />
         <StormDataFlashEntry v-if="showStormDataFlashPanel" @open="dataFlashVisible = true" />
@@ -331,6 +336,15 @@ function onCatAction(action: string) {
       class="device-info-dialog"
     >
       <DeviceInfoPanel />
+    </StudioDialog>
+    <StudioDialog
+      v-if="showWirelessPanel"
+      v-model:visible="wirelessPanelVisible"
+      size="sm"
+      header="2.4G 无线与接收器"
+      class="wireless-dialog"
+    >
+      <WirelessPanel />
     </StudioDialog>
     <StudioDialog
       v-if="showRgbPanel"

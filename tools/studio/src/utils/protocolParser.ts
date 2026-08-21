@@ -27,6 +27,13 @@ import { getKeycodeName } from "@/utils/keycodes";
 const COMMAND_NAMES: Record<number, string> = {
   [Command.SYS_INFO]: "SYS_INFO",
   [Command.SYS_STATUS]: "SYS_STATUS",
+  [Command.RADIO_CAPS]: "RADIO_CAPS",
+  [Command.RADIO_PAIR_STATUS]: "RADIO_PAIR_STATUS",
+  [Command.RADIO_PAIR_START]: "RADIO_PAIR_START",
+  [Command.RADIO_PAIR_CANCEL]: "RADIO_PAIR_CANCEL",
+  [Command.RADIO_PAIR_CLEAR]: "RADIO_PAIR_CLEAR",
+  [Command.RADIO_POLL_RATE_GET]: "RADIO_POLL_RATE_GET",
+  [Command.RADIO_POLL_RATE_SET]: "RADIO_POLL_RATE_SET",
   [Command.CFG_SAVE]: "CFG_SAVE",
   [Command.CFG_LOAD]: "CFG_LOAD",
   [Command.CFG_RESET]: "CFG_RESET",
@@ -56,6 +63,13 @@ const COMMAND_NAMES: Record<number, string> = {
 const COMMAND_LABELS: Record<number, string> = {
   [Command.SYS_INFO]: "获取设备信息",
   [Command.SYS_STATUS]: "获取系统状态",
+  [Command.RADIO_CAPS]: "获取 2.4G 能力",
+  [Command.RADIO_PAIR_STATUS]: "获取配码状态",
+  [Command.RADIO_PAIR_START]: "开始 2.4G 配码",
+  [Command.RADIO_PAIR_CANCEL]: "取消 2.4G 配码",
+  [Command.RADIO_PAIR_CLEAR]: "清除 2.4G 配码",
+  [Command.RADIO_POLL_RATE_GET]: "读取 USB 轮询率",
+  [Command.RADIO_POLL_RATE_SET]: "设置 USB 轮询率",
   [Command.CFG_SAVE]: "保存配置到 Flash",
   [Command.CFG_LOAD]: "从 Flash 加载配置",
   [Command.CFG_RESET]: "恢复出厂设置",
@@ -152,6 +166,7 @@ const FN_ACTION_NAMES: Record<number, string> = {
   [FnAction.MACRO]: "执行宏",
   [FnAction.SLEEP]: "休眠",
   [FnAction.BOOTLOADER]: "进入 Bootloader",
+  [FnAction.RADIO_2G4_PAIR]: "进入 2.4G 配码",
 };
 
 const LAYER_OP_NAMES: Record<number, string> = {

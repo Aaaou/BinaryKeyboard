@@ -6,6 +6,7 @@ export type DeviceUiSectionComponent =
   | 'layer-panel'
   | 'fn-panel'
   | 'rgb-panel'
+  | 'wireless-panel'
   | 'actions-panel'
   | 'debug-terminal';
 

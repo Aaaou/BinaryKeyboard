@@ -65,6 +65,9 @@ export interface DeviceCapabilities {
   explicitSave: boolean;
   wireless: boolean;
   iap: boolean;
+  /** CH592F 2.4G radio backend and receiver control protocol. */
+  radio2g4: boolean;
+  receiverRole: boolean;
 }
 
 export function createDeviceCapabilities(
@@ -85,6 +88,8 @@ export function createDeviceCapabilities(
     explicitSave: true,
     wireless: true,
     iap: true,
+    radio2g4: false,
+    receiverRole: false,
     ...overrides,
   };
 }
@@ -104,7 +109,9 @@ export const CH552_CAPABILITIES = createDeviceCapabilities({
   reset: true,
   explicitSave: false,
   wireless: false,
-  iap: false,
+    iap: false,
+    radio2g4: false,
+    receiverRole: false,
 });
 
 // ============================================================================
@@ -115,6 +122,14 @@ export enum Command {
   // 系统命令 0x01-0x0F
   SYS_INFO = 0x01,
   SYS_STATUS = 0x02,
+  /** 2.4G capability and pairing controls (only exposed by RF-enabled builds). */
+  RADIO_CAPS = 0x03,
+  RADIO_PAIR_STATUS = 0x04,
+  RADIO_PAIR_START = 0x05,
+  RADIO_PAIR_CANCEL = 0x06,
+  RADIO_PAIR_CLEAR = 0x07,
+  RADIO_POLL_RATE_GET = 0x08,
+  RADIO_POLL_RATE_SET = 0x09,
 
   // 配置管理 0x10-0x1F
   CFG_SAVE = 0x10,
@@ -327,6 +342,7 @@ export enum FnAction {
   MACRO = 0x30,
   SLEEP = 0x40,
   BOOTLOADER = 0x41,
+  RADIO_2G4_PAIR = 0x42,
 }
 
 // ============================================================================
@@ -452,7 +468,7 @@ export interface DeviceInfo {
 
 /** 系统状态 (SYS_STATUS 响应) */
 export interface DeviceStatus {
-  workMode: number; // 0=USB, 1=BLE
+  workMode: number; // 0=USB, 1=BLE, 2=2.4G (RF-enabled builds only)
   connectionState: number; // 0=断开, 1=广播中, 2=已连接, 3=挂起
   currentLayer: number;
   batteryLevel: number;
