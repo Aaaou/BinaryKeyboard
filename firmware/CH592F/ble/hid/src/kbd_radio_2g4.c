@@ -103,12 +103,15 @@ static void rf_bound_cb(staBound_t *status)
         s_device_id = status->devId;
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         rf_nv_save();
-        s_state = KBD_RADIO_PAIR_CONNECTED;
-        KBD_RGB_Flash(0, 180, 0, 1500);
+        /* RFBound SUCCESS means the binding transaction completed. It does
+         * not prove that an application HID frame has reached the receiver. */
+        s_state = KBD_RADIO_PAIR_BOUND;
+        KBD_RGB_Flash(180, 120, 0, 250);
     } else if (status->status == bleTimeout) {
         /* RFBound timeout only denotes an internal transaction retry.  Do not
          * turn it into a visible link failure or stop application keepalive. */
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        if (rf_has_peer()) KBD_RGB_Flash(180, 120, 0, 250);
     } else {
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         KBD_RGB_Flash(180, 0, 0, 1500);
@@ -118,7 +121,12 @@ static void rf_bound_cb(staBound_t *status)
 static void rf_irq_cb(rfRole_States_t status, uint8_t id)
 {
     (void)id;
-    if (status & RF_STATE_TX_FINISH) s_state = KBD_RADIO_PAIR_CONNECTED;
+    if (status & RF_STATE_TX_FINISH) {
+        /* A completed RF transmission is the first reliable user-visible
+         * indication of an active session. Keep it as a short green pulse. */
+        s_state = KBD_RADIO_PAIR_CONNECTED;
+        KBD_RGB_Flash(0, 180, 0, 180);
+    }
 }
 
 static int rf_start(void)

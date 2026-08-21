@@ -1089,6 +1089,24 @@ static kbd_state_t KBD_Mode_ResolveIndicatorState(void)
         return KBD_STATE_USB_CONNECTED;
     }
 
+    /* 2.4G has its own link state; do not reuse the stale BLE connection
+     * state, otherwise a previous BLE session can leave the indicator green
+     * while the RF receiver is not connected. */
+    if (g_current_mode == KBD_WORK_MODE_2G4)
+    {
+        switch (KBD_Radio2G4_GetPairState())
+        {
+        case KBD_RADIO_PAIR_CONNECTED:
+            return KBD_STATE_BLE_CONNECTED;    /* green */
+        case KBD_RADIO_PAIRING:
+        case KBD_RADIO_PAIR_UNBOUND:
+            return KBD_STATE_BLE_ADVERTISING;  /* blue */
+        case KBD_RADIO_PAIR_BOUND:
+        default:
+            return KBD_STATE_BLE_DISCONNECTED; /* red: bound, not active */
+        }
+    }
+
     switch (g_conn_state)
     {
     case KBD_CONN_CONNECTED:
