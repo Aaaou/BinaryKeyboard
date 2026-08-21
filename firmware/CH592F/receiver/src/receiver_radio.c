@@ -476,9 +476,13 @@ uint8_t Receiver_Radio_GetHostStartupResult(void) { return s_host_startup_result
 
 void Receiver_Radio_Process(void)
 {
-    if (s_rx_pending || (pDMARxGet->Status & STA_DMA_ENABLE) == 0u) process_rf_rx();
     process_binding_save();
     process_control();
+    /* RF_LibInit has completed, but there is no active descriptor role before
+     * RFBound_StartHost succeeds.  Keep the manual diagnostic boot path
+     * identical to the validated stage-2 path until pairing is requested. */
+    if (!s_host_active) return;
+    if (s_rx_pending || (pDMARxGet->Status & STA_DMA_ENABLE) == 0u) process_rf_rx();
     uint32_t now = RTC_GetCycle32k();
     if (s_state == KBD_RADIO_PAIR_CONNECTED &&
         rtc_elapsed(now, s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
