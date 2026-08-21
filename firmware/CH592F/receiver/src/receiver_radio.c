@@ -14,10 +14,11 @@
 #define RX_PAIR_WINDOW_TICKS (60u * 32768u)
 #define RX_KEYBOARD_DEVICE_TYPE 1u
 #define RX_REPORT_QUEUE_DEPTH 16u
-/* Match WCH's RF_REPORT_DISCONNECT_DELAY (160 * 4 TMOS ticks, about 400 ms).
- * The receiver must then send all-zero HID reports so the USB host cannot
- * retain a key-down state after the radio peer has disappeared. */
-#define RX_LINK_TIMEOUT_TICKS ((32768u * 400u) / 1000u)
+/* Active HID state is refreshed every 20 ms and must be released promptly if
+ * those snapshots disappear. Idle connection state keeps WCH's approximately
+ * 400 ms disconnect grace without affecting any key held by the USB host. */
+#define RX_ACTIVE_HID_TIMEOUT_TICKS ((32768u * 100u) / 1000u)
+#define RX_IDLE_LINK_TIMEOUT_TICKS  ((32768u * 400u) / 1000u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -83,6 +84,12 @@ static uint32_t s_last_session;
 static uint32_t s_last_sequence;
 static uint32_t s_last_valid_rx;
 static bool s_has_sequence;
+static USB_KeyboardReport_t s_last_keyboard_report;
+static bool s_last_keyboard_report_valid;
+static uint8_t s_last_mouse_buttons;
+static bool s_last_mouse_buttons_valid;
+static uint16_t s_last_consumer_key;
+static bool s_last_consumer_key_valid;
 static keyboard_queue_t s_keyboard_queue;
 static mouse_queue_t s_mouse_queue;
 static consumer_queue_t s_consumer_queue;
@@ -239,7 +246,7 @@ static void bound_cb(staBound_t *status)
          * report may have arrived just before the callback. Keep the public
          * state connected until the explicit application watchdog expires. */
         if (s_state != KBD_RADIO_PAIR_CONNECTED ||
-            rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
+            rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_IDLE_LINK_TIMEOUT_TICKS) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
         }
         if (!s_pair_timeout_logged) {
@@ -362,7 +369,23 @@ static void enqueue_release_all(void)
     keyboard_enqueue(&keyboard);
     mouse_enqueue(&mouse);
     consumer_enqueue(&consumer);
+    memset(&s_last_keyboard_report, 0, sizeof(s_last_keyboard_report));
+    s_last_keyboard_report_valid = true;
+    s_last_mouse_buttons = 0u;
+    s_last_mouse_buttons_valid = true;
+    s_last_consumer_key = 0u;
+    s_last_consumer_key_valid = true;
     s_release_pending = false;
+}
+
+static bool hid_state_active(void)
+{
+    if (s_last_keyboard_report.modifier != 0u ||
+        s_last_mouse_buttons != 0u || s_last_consumer_key != 0u) return true;
+    for (uint8_t i = 0u; i < sizeof(s_last_keyboard_report.keycode); i++) {
+        if (s_last_keyboard_report.keycode[i] != 0u) return true;
+    }
+    return false;
 }
 
 static bool frame_is_new(const kbd_radio_frame_t *frame)
@@ -387,11 +410,31 @@ static void process_rf_rx(void)
                 s_last_valid_rx = RTC_GetCycle32k();
                 s_has_sequence = true;
                 if (frame->header.type == KBD_RADIO_FRAME_KEYBOARD && frame->header.length == 8u) {
-                    keyboard_enqueue((const USB_KeyboardReport_t *)frame->payload);
+                    const USB_KeyboardReport_t *report =
+                        (const USB_KeyboardReport_t *)frame->payload;
+                    if (!s_last_keyboard_report_valid ||
+                        memcmp(&s_last_keyboard_report, report, sizeof(*report)) != 0) {
+                        keyboard_enqueue(report);
+                        memcpy(&s_last_keyboard_report, report, sizeof(*report));
+                        s_last_keyboard_report_valid = true;
+                    }
                 } else if (frame->header.type == KBD_RADIO_FRAME_MOUSE && frame->header.length == 4u) {
-                    mouse_enqueue((const USB_MouseReport_t *)frame->payload);
+                    const USB_MouseReport_t *report =
+                        (const USB_MouseReport_t *)frame->payload;
+                    bool state_changed = !s_last_mouse_buttons_valid ||
+                                         s_last_mouse_buttons != report->buttons;
+                    s_last_mouse_buttons = report->buttons;
+                    s_last_mouse_buttons_valid = true;
+                    if (state_changed || report->x != 0 || report->y != 0 ||
+                        report->wheel != 0) mouse_enqueue(report);
                 } else if (frame->header.type == KBD_RADIO_FRAME_CONSUMER && frame->header.length == 2u) {
-                    consumer_enqueue((const USB_ConsumerReport_t *)frame->payload);
+                    const USB_ConsumerReport_t *report =
+                        (const USB_ConsumerReport_t *)frame->payload;
+                    bool state_changed = !s_last_consumer_key_valid ||
+                                         s_last_consumer_key != report->key;
+                    s_last_consumer_key = report->key;
+                    s_last_consumer_key_valid = true;
+                    if (state_changed) consumer_enqueue(report);
                 }
                 if (s_state != KBD_RADIO_PAIR_CONNECTED) {
                     Receiver_Log_Event(RX_LOG_RF_FRAME_OK, KBD_RECEIVER_STARTUP_STAGE,
@@ -602,7 +645,9 @@ void Receiver_Radio_Process(void)
     if (s_rx_pending || (pDMARxGet->Status & STA_DMA_ENABLE) == 0u) process_rf_rx();
     uint32_t now = RTC_GetCycle32k();
     if (s_state == KBD_RADIO_PAIR_CONNECTED &&
-        rtc_elapsed(now, s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
+        rtc_elapsed(now, s_last_valid_rx) >=
+            (hid_state_active() ? RX_ACTIVE_HID_TIMEOUT_TICKS
+                                : RX_IDLE_LINK_TIMEOUT_TICKS)) {
         Receiver_Log_Event(RX_LOG_LINK_LOST, KBD_RECEIVER_STARTUP_STAGE, 0u);
         s_release_pending = true;
         s_has_sequence = false;
