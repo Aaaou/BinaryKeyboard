@@ -3,6 +3,7 @@
 #include "kbd_mode_config.h"
 #include "usb_hid.h"
 #include "receiver_radio.h"
+#include "receiver_log.h"
 #include <string.h>
 
 static bool s_deferred_response;
@@ -30,6 +31,7 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 {
     uint8_t resp[18] = { KBD_RESP_OK };
     int ret = 0; uint8_t len = 1;
+    Receiver_Log_MarkHostSeen();
     if (s_deferred_response &&
         (frame->cmd == KBD_CMD_RADIO_PAIR_START ||
          frame->cmd == KBD_CMD_RADIO_PAIR_CANCEL ||
@@ -87,6 +89,7 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
     KBD_Command_SendResponse(frame->cmd, frame->sub, resp, len);
     return ret;
 
+#if KBD_RECEIVER_STARTUP_STAGE >= 3
 deferred:
     if (ret != 0 || s_deferred_response) {
         resp[0] = KBD_RESP_ERR_BUSY;
@@ -97,4 +100,5 @@ deferred:
     s_deferred_sub = frame->sub;
     s_deferred_response = true;
     return 0;
+#endif
 }

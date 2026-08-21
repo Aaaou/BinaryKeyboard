@@ -1,0 +1,22 @@
+#ifndef RECEIVER_LOG_H
+#define RECEIVER_LOG_H
+
+#include <stdint.h>
+
+/* Receiver lifecycle event codes carried in KBD_LOG_SYSTEM_EVENT. */
+#define RX_LOG_BOOT                 0x80u
+#define RX_LOG_USB_CONFIGURED       0x81u
+#define RX_LOG_TIME_INIT_BEGIN      0x82u
+#define RX_LOG_TIME_INIT_OK         0x83u
+#define RX_LOG_RF_LIB_INIT_BEGIN    0x84u
+#define RX_LOG_RF_LIB_INIT_OK       0x85u
+#define RX_LOG_HOST_INIT_BEGIN      0x86u
+#define RX_LOG_HOST_INIT_OK         0x87u
+#define RX_LOG_HOST_INIT_FAIL       0x88u
+
+void Receiver_Log_Init(void);
+void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);
+void Receiver_Log_MarkHostSeen(void);
+void Receiver_Log_Flush(void);
+
+#endif

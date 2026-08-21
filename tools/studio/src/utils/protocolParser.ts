@@ -703,8 +703,21 @@ export function parseLogFrame(frame: Uint8Array): {
           [SystemLogEvent.BOOT]: "设备启动",
           [SystemLogEvent.SLEEP]: "进入休眠",
           [SystemLogEvent.WAKEUP]: "唤醒",
+          0x80: "接收器启动",
+          0x81: "USB 已配置",
+          0x82: "时间基准初始化开始",
+          0x83: "时间基准初始化完成",
+          0x84: "RF 库初始化开始",
+          0x85: "RF 库初始化完成",
+          0x86: "RF Host 初始化开始",
+          0x87: "RF Host 初始化完成",
+          0x88: "RF Host 初始化失败",
         };
         parsed += ` | ${events[data[0]] || hex(data[0])}`;
+        if (data[0] >= 0x80 && len >= 2) {
+          parsed += ` | 阶段 ${data[1]}`;
+          if (len >= 3 && data[2] !== 0) parsed += ` | 结果 ${data[2]}`;
+        }
       }
       break;
   }

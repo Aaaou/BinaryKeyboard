@@ -433,10 +433,9 @@ static int request_control(receiver_control_t control, uint16_t rate)
     return result;
 }
 
-void Receiver_Radio_Init(void)
+int Receiver_Radio_Init(void)
 {
-    Receiver_Radio_RfLibraryInit();
-    start_host(!has_peer());
+    return start_host(!has_peer());
 }
 
 void Receiver_Radio_RfLibraryInit(void)
