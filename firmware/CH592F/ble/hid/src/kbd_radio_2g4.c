@@ -136,12 +136,10 @@ static void rf_bound_cb(staBound_t *status)
 static void rf_irq_cb(rfRole_States_t status, uint8_t id)
 {
     (void)id;
-    if (status & RF_STATE_TX_FINISH) {
-        /* A completed RF transmission is the first reliable user-visible
-         * indication of an active session. Keep it as a short green pulse. */
-        s_state = KBD_RADIO_PAIR_CONNECTED;
-        KBD_RGB_Flash(0, 180, 0, 180);
-    }
+    /* TX_FINISH only means the DMA/RF engine completed a transmission. It
+     * does not prove that the receiver accepted an application HID frame;
+     * keep the keyboard in BOUND until the pairing/link state is confirmed. */
+    (void)status;
 }
 
 static int rf_start(bool pairing)

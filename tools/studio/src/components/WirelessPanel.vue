@@ -4,10 +4,10 @@
     <p class="hint">仅 RF-enabled 键盘固件或 CH592F 接收器显示。</p>
     <div class="status-row"><span>配码状态</span><strong>{{ pairLabel }}</strong></div>
     <div class="status-row"><span>设备角色</span><strong>{{ roleLabel }}</strong></div>
-    <div v-if="status.fingerprint" class="identity-block">
+    <div v-if="caps.enabled && status.state !== 'unsupported'" class="identity-block">
       <div><span>本机 ID</span><code>{{ status.localId || '未知' }}</code></div>
-      <div><span>对端 ID</span><code>{{ status.peerId || '未绑定' }}</code></div>
-      <div><span>配对指纹</span><code>{{ status.fingerprint }}</code></div>
+      <div><span>对端 ID</span><code>{{ status.peerId || (status.state === 'pairing' ? '配码中，尚未提交' : '未绑定') }}</code></div>
+      <div><span>配对指纹</span><code>{{ status.fingerprint || '配码完成后生成' }}</code></div>
       <div><span>绑定代次/会话</span><code>{{ status.generation ?? status.session ?? '-' }}</code></div>
       <div><span>最近有效帧</span><code>{{ lastFrameLabel }}</code></div>
     </div>
@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { hidService } from '@/services/HidService';
 import { showToast } from '@/services/toastService';
 import type { PairStatus, RadioCapabilities } from '@/services/hid/common/types';
@@ -77,7 +77,12 @@ async function start() {
 const cancel = () => run(() => hidService.cancelPairing(), '已取消配码');
 const clear = () => run(() => hidService.clearPairing(false), '已请求双端清除；远端离线时请使用重新配码');
 const savePollRate = () => run(() => hidService.setPollRate(pollRate.value), `已设置为 ${pollRate.value} Hz`);
-onMounted(() => void refresh());
+let refreshTimer: number | undefined;
+onMounted(() => {
+  void refresh();
+  refreshTimer = window.setInterval(() => { if (!busy.value) void refresh(); }, 1000);
+});
+onUnmounted(() => { if (refreshTimer !== undefined) window.clearInterval(refreshTimer); });
 </script>
 
 <style scoped>
