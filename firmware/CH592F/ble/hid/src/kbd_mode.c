@@ -340,7 +340,13 @@ kbd_conn_state_t KBD_Mode_GetConnState(void)
 bool KBD_Mode_IsConnected(void)
 {
     if (g_current_mode == KBD_WORK_MODE_2G4)
-        return KBD_Radio2G4_GetPairState() == KBD_RADIO_PAIR_CONNECTED;
+    {
+        /* A bound RF peer must be allowed to send the first frame. The
+         * receiver promotes BOUND to CONNECTED only after validating that
+         * frame; rejecting input here made that transition impossible. */
+        kbd_radio_pair_state_t state = KBD_Radio2G4_GetPairState();
+        return state == KBD_RADIO_PAIR_CONNECTED || state == KBD_RADIO_PAIR_BOUND;
+    }
     return (g_conn_state == KBD_CONN_CONNECTED);
 }
 
@@ -352,7 +358,10 @@ bool KBD_Mode_IsInputReady(void)
     }
 
     if (g_current_mode == KBD_WORK_MODE_2G4)
-        return KBD_Radio2G4_GetPairState() == KBD_RADIO_PAIR_CONNECTED;
+    {
+        kbd_radio_pair_state_t state = KBD_Radio2G4_GetPairState();
+        return state == KBD_RADIO_PAIR_CONNECTED || state == KBD_RADIO_PAIR_BOUND;
+    }
     return BLE_HID_IsKeyboardReady();
 }
 
