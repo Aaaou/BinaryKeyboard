@@ -89,6 +89,8 @@ static volatile uint8_t s_host_startup_result;
 static bool s_host_active;
 static bool s_boot_host_pending;
 static uint32_t s_boot_host_due;
+static bool s_pair_success_logged;
+static bool s_pair_timeout_logged;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static void receiver_tmos_enable_irq(void)
@@ -194,7 +196,10 @@ static int save_nv(void)
 static void apply_filter(bool pairing)
 {
     memset(&s_speed_item, 0, sizeof(s_speed_item));
-    s_speed_item.deviceId = RF_ROLE_BOUND_ID;
+    /* WCH uses ID 7 only while accepting a binding. After SUCCESS the Host
+     * speed list must select the assigned device ID, otherwise it remains in
+     * the bindable schedule and loops SUCCESS -> timeout -> SUCCESS. */
+    s_speed_item.deviceId = pairing ? RF_ROLE_BOUND_ID : s_nv.device_id;
     s_speed_item.rssi = pairing ? -70 : 0;
     /* WCH's reference dongle uses devType=0 in both the bindable and
      * peer-filtered Host lists. Device type remains part of the application
@@ -215,7 +220,10 @@ static void bound_cb(staBound_t *status)
          * application link is connected only after process_rf_rx() validates
          * an actual keyboard frame from this peer. */
         s_state = KBD_RADIO_PAIR_BOUND;
-        Receiver_Log_Event(RX_LOG_PAIR_SUCCESS, KBD_RECEIVER_STARTUP_STAGE, status->devId);
+        if (!s_pair_success_logged) {
+            Receiver_Log_Event(RX_LOG_PAIR_SUCCESS, KBD_RECEIVER_STARTUP_STAGE, status->devId);
+            s_pair_success_logged = true;
+        }
     } else if (status->status == bleTimeout) {
         s_has_sequence = false;
         /* RFBound reports a transaction timeout while it is re-entering its
@@ -226,7 +234,10 @@ static void bound_cb(staBound_t *status)
             rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
         }
-        Receiver_Log_Event(RX_LOG_PAIR_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
+        if (!s_pair_timeout_logged) {
+            Receiver_Log_Event(RX_LOG_PAIR_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
+            s_pair_timeout_logged = true;
+        }
     } else {
         s_has_sequence = false;
         if (s_state != KBD_RADIO_PAIR_CONNECTED) {
@@ -262,6 +273,8 @@ static int start_host(bool pairing)
      * a timestamp from a previous binding into the next diagnostic view. */
     s_last_valid_rx = 0u;
     s_has_sequence = false;
+    s_pair_success_logged = false;
+    s_pair_timeout_logged = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
     s_host_startup_state = 1u;
     s_host_startup_result = 0u;
@@ -427,6 +440,7 @@ static void process_binding_save(void)
     SYS_RecoverIrq(irq);
     if (memcmp(s_nv.peer, pending_peer, sizeof(s_nv.peer)) == 0 &&
         s_nv.device_id == pending_device_id) {
+        apply_filter(false);
         s_has_sequence = false;
         s_last_valid_rx = 0u;
         return;
@@ -440,6 +454,9 @@ static void process_binding_save(void)
         apply_filter(false);
         s_has_sequence = false;
         s_last_valid_rx = 0u;
+        /* The current RFBound Host remains active. Switching its speed list
+         * to the assigned ID is the official transition from binding to the
+         * normal peer schedule; restarting Host here would discard it. */
     } else {
         memcpy(s_nv.peer, old_peer, sizeof(s_nv.peer));
         s_nv.device_id = old_device_id;
