@@ -30,6 +30,7 @@ set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "Override full USB/BLE device name,
 option(KBD_SLEEP_TEST_MODE "Enable visible idle/sleep timing indicators" OFF)
 option(KBD_RADIO_2G4_ENABLED "Enable validated CH592F RF FAST backend" OFF)
 option(KBD_RECEIVER_BUILD "Build the CH592F 2.4G USB receiver" OFF)
+option(KBD_RECEIVER_USB_DIAGNOSTIC "Build receiver with USB only for hardware diagnosis" OFF)
 if(KBD_RECEIVER_BUILD)
     set(KBD_RADIO_2G4_ENABLED ON CACHE BOOL "" FORCE)
     set(KBD_DEVICE_NAME_OVERRIDE "BinaryKeyboard 2.4G Receiver" CACHE STRING "" FORCE)
@@ -276,6 +277,9 @@ if(KBD_RECEIVER_BUILD)
         KBD_USB_INPUT_INTERVAL=0x01
         USB_PID=0x2108
     )
+    if(KBD_RECEIVER_USB_DIAGNOSTIC)
+        list(APPEND CH592_COMPILE_DEFINITIONS KBD_RECEIVER_USB_DIAGNOSTIC=1)
+    endif()
 endif()
 
 if(KBD_SLEEP_TEST_MODE)

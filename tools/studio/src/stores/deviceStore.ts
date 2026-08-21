@@ -296,7 +296,14 @@ export const useDeviceStore = defineStore("device", () => {
 
     try {
       await refreshDeviceInfo();
-      await refreshKeymap();
+      // A 2.4G receiver uses the CH592 transport but has no keymap of its own.
+      // Its paired keyboard remains the place where mappings are configured.
+      if (!capabilities.value.receiverRole) {
+        await refreshKeymap();
+      } else {
+        keymap.value = createEmptyKeymap();
+        keymapOriginal.value = createEmptyKeymap();
+      }
       if (supportsRgb.value) {
         await refreshRgbConfig();
       } else {
@@ -350,6 +357,14 @@ export const useDeviceStore = defineStore("device", () => {
 
   /** 刷新按键映射 */
   async function refreshKeymap(): Promise<void> {
+    // The receiver shares the CH592 vendor-HID transport but deliberately
+    // has no keyboard matrix or keymap command surface.
+    if (capabilities.value.receiverRole) {
+      keymap.value = createEmptyKeymap();
+      keymapOriginal.value = createEmptyKeymap();
+      currentEditLayer.value = 0;
+      return;
+    }
     const config = normalizeKeymapConfig(await hidService.getFullKeymap());
     keymap.value = config;
     keymapOriginal.value = cloneKeymapConfig(config);
@@ -478,7 +493,9 @@ export const useDeviceStore = defineStore("device", () => {
       await hidService.resetConfig();
       macroStore.reset();
       await refreshDeviceInfo();
-      await refreshKeymap();
+      if (!capabilities.value.receiverRole) {
+        await refreshKeymap();
+      }
       if (supportsRgb.value) {
         await refreshRgbConfig();
       }

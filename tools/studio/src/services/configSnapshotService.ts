@@ -449,7 +449,9 @@ export async function applyConfigBackupToDevice(backup: ConfigBackupFile): Promi
   const deviceStore = useDeviceStore();
   const macroStore = useMacroStore();
   await deviceStore.refreshDeviceInfo();
-  await deviceStore.refreshKeymap();
+  if (!deviceStore.capabilities.receiverRole) {
+    await deviceStore.refreshKeymap();
+  }
   if (deviceStore.supportsRgb) await deviceStore.refreshRgbConfig();
   if (deviceStore.supportsFnKeys) await deviceStore.refreshFnKeyConfig();
   if (deviceStore.supportsOsMode) await deviceStore.refreshOsMode();

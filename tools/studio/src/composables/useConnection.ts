@@ -145,7 +145,9 @@ export function useConnection() {
 
   async function refreshAll() {
     try {
-      await deviceStore.refreshKeymap();
+      if (!deviceStore.capabilities.receiverRole) {
+        await deviceStore.refreshKeymap();
+      }
       if (deviceStore.supportsRgb) {
         await deviceStore.refreshRgbConfig();
       }

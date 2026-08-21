@@ -48,8 +48,6 @@ function scoreDeviceForAdapter(device: HIDDevice, adapter: HidAdapter): number {
 
     if (deviceMatchesFilter(device, filter)) {
       best = Math.max(best, filter.usagePage !== undefined || filter.usage !== undefined ? 100 : 50);
-    } else {
-      best = Math.max(best, 10);
     }
   }
 

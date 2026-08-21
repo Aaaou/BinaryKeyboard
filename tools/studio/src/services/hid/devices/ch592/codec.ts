@@ -170,6 +170,29 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   parseSysInfo(resp: DataView): DeviceInfo {
     const d = this.expectOk(resp, 'SYS_INFO');
     const receiverRole = resp.getUint8(d + 15) === 1;
+    // The receiver exposes the same transport as a keyboard but deliberately
+    // implements only system and radio commands. Do not let its USB PID make
+    // the Studio issue keyboard-only reads during connection initialization.
+    this.capabilities = receiverRole
+      ? {
+          ...CH592_CAPABILITIES,
+          multiLayer: false,
+          layerKeyActions: false,
+          rgb: false,
+          fnKeys: false,
+          osMode: false,
+          macroActions: false,
+          wheelClickAction: false,
+          battery: false,
+          logs: false,
+          reset: false,
+          explicitSave: false,
+          wireless: false,
+          iap: false,
+          radio2g4: true,
+          receiverRole: true,
+        }
+      : CH592_CAPABILITIES;
     return {
       vendorId: (resp.getUint8(d + 1) << 8) | resp.getUint8(d + 2),
       productId: (resp.getUint8(d + 3) << 8) | resp.getUint8(d + 4),
@@ -189,8 +212,6 @@ export class Ch592Codec implements DeviceCodec<DataView> {
         ...this.capabilities,
         radio2g4: resp.getUint8(d + 14) !== 0,
         receiverRole,
-        // The RF receiver image has no LOG/LOG_GET/LOG_SET implementation.
-        logs: receiverRole ? false : this.capabilities.logs,
       },
     };
   }
