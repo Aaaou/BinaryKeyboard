@@ -541,6 +541,14 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       hasPeer: protocolVersion ? (flags & 0x01) !== 0 : fp !== 0,
       linkConfirmed: protocolVersion ? (flags & 0x02) !== 0 : state === 'connected',
       pairingActive: protocolVersion ? (flags & 0x04) !== 0 : state === 'pairing',
+      txEnqueued: payloadLength >= 48 ? resp.getUint32(d + 31, true) : undefined,
+      txBusy: payloadLength >= 48 ? resp.getUint32(d + 35, true) : undefined,
+      txFinished: payloadLength >= 48 ? resp.getUint32(d + 39, true) : undefined,
+      lastTxAgeMs: payloadLength >= 48
+        ? (resp.getUint32(d + 43, true) === 0xffffffff
+          ? null : Math.round(resp.getUint32(d + 43, true) * 1000 / 32768))
+        : undefined,
+      txDescriptorsBusy: payloadLength >= 48 ? resp.getUint8(d + 47) : undefined,
     };
   }
 

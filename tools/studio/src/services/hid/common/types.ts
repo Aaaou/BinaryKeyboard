@@ -88,6 +88,11 @@ export interface PairStatus {
   hasPeer?: boolean;
   linkConfirmed?: boolean;
   pairingActive?: boolean;
+  txEnqueued?: number;
+  txBusy?: number;
+  txFinished?: number;
+  lastTxAgeMs?: number | null;
+  txDescriptorsBusy?: number;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {

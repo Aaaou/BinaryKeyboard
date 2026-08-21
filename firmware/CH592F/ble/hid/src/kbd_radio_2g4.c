@@ -46,7 +46,12 @@ static bool s_pair_restore_pending;
  * reconnect. Keep those sessions distinct: timeout is recoverable during a
  * reconnect and must never open the 60 s pairing window. */
 static bool s_manual_pairing;
+static volatile uint32_t s_tx_enqueued;
+static volatile uint32_t s_tx_busy;
+static volatile uint32_t s_tx_finished;
+static uint32_t s_last_tx;
 extern RF_DMADESCTypeDef *pDMATxGet;
+extern RF_DMADESCTypeDef DMATxDscrTab[RF_TXBUFNB];
 
 static void kbd_tmos_enable_irq(void)
 {
@@ -156,7 +161,7 @@ static void rf_irq_cb(rfRole_States_t status, uint8_t id)
     /* TX_FINISH only means the DMA/RF engine completed a transmission. It
      * does not prove that the receiver accepted an application HID frame;
      * keep the keyboard in BOUND until the pairing/link state is confirmed. */
-    (void)status;
+    if ((status & RF_STATE_TX_FINISH) != 0u) s_tx_finished++;
 }
 
 static int rf_start(bool pairing)
@@ -186,7 +191,11 @@ static int rf_send(const uint8_t *data, uint8_t len)
 {
     uint32_t irq;
     SYS_DisableAllIrq(&irq);
-    if (pDMATxGet->Status & STA_DMA_ENABLE) { SYS_RecoverIrq(irq); return -1; }
+    if (pDMATxGet->Status & STA_DMA_ENABLE) {
+        s_tx_busy++;
+        SYS_RecoverIrq(irq);
+        return -1;
+    }
     rfPackage_t *packet = (rfPackage_t *)pDMATxGet->BufferAddr;
     packet->type = s_device_id;
     packet->length = (uint8_t)(PKT_ACK_LEN + len);
@@ -194,6 +203,8 @@ static int rf_send(const uint8_t *data, uint8_t len)
     pDMATxGet->BufferSize = (uint32_t)(PKT_HEAD_LEN + len);
     pDMATxGet->Status = STA_DMA_ENABLE;
     pDMATxGet = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
+    s_tx_enqueued++;
+    s_last_tx = RTC_GetCycle32k();
     SYS_RecoverIrq(irq);
     /* DMA acceptance is not peer acknowledgement. The keyboard remains
      * BOUND; only the receiver can claim an application-confirmed link. */
@@ -290,6 +301,21 @@ uint32_t KBD_Radio2G4_GetPairFingerprint(void)
     return rf_has_peer() ? h : 0u;
 }
 uint32_t KBD_Radio2G4_GetSession(void) { return s_session; }
+uint32_t KBD_Radio2G4_GetTxEnqueued(void) { return s_tx_enqueued; }
+uint32_t KBD_Radio2G4_GetTxBusy(void) { return s_tx_busy; }
+uint32_t KBD_Radio2G4_GetTxFinished(void) { return s_tx_finished; }
+uint32_t KBD_Radio2G4_GetLastTxAge(void)
+{
+    return s_last_tx ? rf_rtc_elapsed(RTC_GetCycle32k(), s_last_tx) : 0xFFFFFFFFu;
+}
+uint8_t KBD_Radio2G4_GetTxDescriptorsBusy(void)
+{
+    uint8_t count = 0u;
+    for (uint8_t i = 0; i < RF_TXBUFNB; i++) {
+        if ((DMATxDscrTab[i].Status & STA_DMA_ENABLE) != 0u) count++;
+    }
+    return count;
+}
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count)
 {
     uint8_t report[8] = { modifier, 0, 0, 0, 0, 0, 0, 0 };
@@ -369,4 +395,9 @@ void KBD_Radio2G4_GetLocalId(uint8_t out[6]) { if (out) memset(out, 0, 6); }
 void KBD_Radio2G4_GetPeerId(uint8_t out[6]) { if (out) memset(out, 0, 6); }
 uint32_t KBD_Radio2G4_GetPairFingerprint(void) { return 0; }
 uint32_t KBD_Radio2G4_GetSession(void) { return 0; }
+uint32_t KBD_Radio2G4_GetTxEnqueued(void) { return 0; }
+uint32_t KBD_Radio2G4_GetTxBusy(void) { return 0; }
+uint32_t KBD_Radio2G4_GetTxFinished(void) { return 0; }
+uint32_t KBD_Radio2G4_GetLastTxAge(void) { return 0xFFFFFFFFu; }
+uint8_t KBD_Radio2G4_GetTxDescriptorsBusy(void) { return 0; }
 #endif

@@ -492,6 +492,14 @@ export function parseReceiveFrame(frame: Uint8Array): {
         parsed += ageTicks === 0xffffffff
           ? " | 有效帧 从未收到"
           : ` | 有效帧 ${Math.round(ageTicks * 1000 / 32768)}ms 前`;
+        if (len >= 48 && data[2] === 0) {
+          const lastTxTicks = le32(43);
+          parsed += ` | TX入队=${le32(31)} 完成=${le32(39)} DMA忙=${le32(35)}`;
+          parsed += ` 描述符=${data[47]}/16`;
+          parsed += lastTxTicks === 0xffffffff
+            ? " 最近TX=从未发送"
+            : ` 最近TX=${Math.round(lastTxTicks * 1000 / 32768)}ms前`;
+        }
       } else {
         parsed += ` | 旧状态包 ${len}B，无法读取绑定 ID；请刷入同一版本固件`;
       }

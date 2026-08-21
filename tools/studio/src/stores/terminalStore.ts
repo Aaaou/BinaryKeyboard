@@ -159,12 +159,13 @@ export const useTerminalStore = defineStore('terminal', () => {
   function addEntry(entry: Omit<TerminalEntry, 'id' | 'timestamp' | 'glowColor'> & { glowColor?: string }) {
     const now = Date.now();
     const cmdCode = parseInt(entry.cmdHex, 16);
-    const routine = cmdCode === 0x02 || cmdCode === 0x71;
+    const routine = cmdCode === 0x02 || cmdCode === 0x03 || cmdCode === 0x04
+      || cmdCode === 0x08 || cmdCode === 0x71;
     if (routine && entry.level !== 'error') {
       const key = `${entry.direction}:${cmdCode}`;
       const value = `${entry.statusCode ?? ''}|${entry.parsed}|${entry.rawHex}`;
       const previous = routineSnapshots.get(key);
-      if (previous && previous.value === value && now - previous.timestamp < 10000) {
+      if (previous && now - previous.timestamp < 10000) {
         return;
       }
       routineSnapshots.set(key, { value, timestamp: now });

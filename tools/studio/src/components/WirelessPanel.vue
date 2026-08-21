@@ -12,6 +12,12 @@
       <div><span>最近有效帧</span><code>{{ lastFrameLabel }}</code></div>
       <div><span>链路确认</span><code>{{ status.linkConfirmed ? '已收到有效帧' : '未确认' }}</code></div>
       <div><span>诊断协议</span><code>{{ status.protocolVersion ? `v${status.protocolVersion}` : '旧固件' }}</code></div>
+      <template v-if="caps.role === 'keyboard' && status.txEnqueued !== undefined">
+        <div><span>RF TX 入队/完成</span><code>{{ status.txEnqueued }} / {{ status.txFinished }}</code></div>
+        <div><span>RF TX DMA 忙</span><code>{{ status.txBusy }} 次</code></div>
+        <div><span>TX 描述符占用</span><code>{{ status.txDescriptorsBusy }} / 16</code></div>
+        <div><span>最近 TX</span><code>{{ status.lastTxAgeMs == null ? '尚未发送' : `${status.lastTxAgeMs} ms 前` }}</code></div>
+      </template>
     </div>
     <div class="actions">
       <button type="button" :disabled="busy" @click="start">开始配码</button>
