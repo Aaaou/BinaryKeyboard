@@ -16,6 +16,7 @@
 /* Allow RFBound's delayed-disconnect path to settle before updating the
  * application-visible state. Application traffic is not a link watchdog. */
 #define KBD_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
+#define KBD_RF_FAILURE_FLASH_TICKS ((32768u * 300u) / 1000u)
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
 typedef struct __attribute__((packed)) {
@@ -49,9 +50,12 @@ static volatile uint32_t s_tx_enqueued;
 static volatile uint32_t s_tx_busy;
 static volatile uint32_t s_tx_finished;
 static uint32_t s_last_tx;
-/* RFBound callbacks run in the RF interrupt context. Defer WCH queue
- * recovery to the keyboard main loop, where RFRole_ClearTxData is safe. */
+/* RFBound callbacks run in RF context. Defer role restart work to the
+ * keyboard main loop and expose only stable states to the RGB scheduler. */
 static volatile uint8_t s_indicator_event;
+static bool s_failure_indicated;
+static bool s_failure_flash_active;
+static uint32_t s_failure_flash_started;
 static volatile bool s_rf_ready;
 static volatile bool s_disconnect_pending;
 static uint32_t s_disconnect_started;
@@ -140,6 +144,8 @@ static void rf_bound_cb(staBound_t *status)
         s_rf_ready = true;
         s_disconnect_pending = false;
         s_rf_restart_pending = false;
+        s_failure_indicated = false;
+        s_indicator_event = 2u;
         /* Match WCH's reference device state machine: application traffic is
          * allowed only after RFBound reports SUCCESS. BOUND means a saved
          * peer exists but the RF session is not ready yet. */
@@ -170,7 +176,10 @@ static void rf_bound_cb(staBound_t *status)
          * The callback runs in RF context, so start from the main loop. */
         s_rf_restart_pending = rf_has_peer();
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-        s_indicator_event = 1u;
+        if (!s_failure_indicated) {
+            s_failure_indicated = true;
+            s_indicator_event = 1u;
+        }
     }
 }
 
@@ -262,18 +271,26 @@ int KBD_Radio2G4_Init(void)
 void KBD_Radio2G4_Stop(void)
 {
     if (s_initialized) RFRole_Shut();
+    KBD_RGB_CancelFlash();
     s_initialized = false;
     s_manual_pairing = false;
     s_rf_restart_pending = false;
     s_disconnect_pending = false;
+    s_indicator_event = 0u;
+    s_failure_indicated = false;
+    s_failure_flash_active = false;
     s_rf_ready = false;
 }
 int KBD_Radio2G4_StartPairing(void)
 {
     if (!s_initialized) return -1;
     RFRole_Shut();
+    KBD_RGB_CancelFlash();
     s_disconnect_pending = false;
     s_rf_restart_pending = false;
+    s_indicator_event = 0u;
+    s_failure_indicated = false;
+    s_failure_flash_active = false;
     s_manual_pairing = true;
     memcpy(s_pair_backup_peer, s_peer_id, sizeof(s_peer_id));
     s_pair_backup_device_id = s_device_id;
@@ -298,9 +315,13 @@ int KBD_Radio2G4_CancelPairing(void)
 {
     if (!s_initialized || s_state != KBD_RADIO_PAIRING) return -1;
     RFRole_Shut();
+    KBD_RGB_CancelFlash();
     s_manual_pairing = false;
     s_rf_restart_pending = false;
     s_disconnect_pending = false;
+    s_indicator_event = 0u;
+    s_failure_indicated = false;
+    s_failure_flash_active = false;
     if (s_pair_backup_valid) {
         memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
         s_device_id = s_pair_backup_device_id;
@@ -317,10 +338,14 @@ int KBD_Radio2G4_ClearPairing(bool force)
     (void)force;
     if (!s_initialized) return -1;
     RFRole_Shut(); RFRole_ClearTxData(s_device_id);
+    KBD_RGB_CancelFlash();
     s_manual_pairing = false;
     s_pair_backup_valid = false;
     s_rf_restart_pending = false;
     s_disconnect_pending = false;
+    s_indicator_event = 0u;
+    s_failure_indicated = false;
+    s_failure_flash_active = false;
     s_rf_ready = false;
     if (EEPROM_ERASE(KBD_RF_BIND_ADDR, EEPROM_PAGE_SIZE) != 0) return -1;
     memset(s_peer_id, 0, sizeof(s_peer_id)); s_device_id = KBD_RF_KEYBOARD_ID; s_state = KBD_RADIO_PAIR_UNBOUND;
@@ -388,9 +413,34 @@ void KBD_Radio2G4_Process(void)
     /* Do not write WS2812 here.  The RGB scheduler owns the strip and maps
      * the radio state to the dedicated indicator LED, preventing two
      * independent loops from fighting over LED0/LED1 during pairing. */
-    if (s_indicator_event != 0u) {
+    uint8_t indicator_event = s_indicator_event;
+    if (indicator_event != 0u) {
         s_indicator_event = 0u;
-        KBD_RGB_Flash(180, 0, 0, 600);
+        if (indicator_event == 2u) {
+            /* Clear both the logical overlay and the physical WS2812 value.
+             * Do not depend on the RGB TMOS timer surviving RF recovery. */
+            s_failure_flash_active = false;
+            KBD_RGB_CancelFlash();
+            KBD_RGB_SetState(KBD_STATE_BLE_CONNECTED);
+            KBD_RGB_Process();
+        } else {
+            /* One short failure acknowledgement per outage. The persistent
+             * reconnect indication remains the state-machine-owned amber. */
+            KBD_RGB_SetState(rf_has_peer() ? KBD_STATE_2G4_BOUND
+                                           : KBD_STATE_BLE_ADVERTISING);
+            KBD_RGB_Flash(180, 0, 0, 300);
+            s_failure_flash_active = true;
+            s_failure_flash_started = RTC_GetCycle32k();
+        }
+    }
+    if (s_failure_flash_active &&
+        rf_rtc_elapsed(RTC_GetCycle32k(), s_failure_flash_started) >=
+            KBD_RF_FAILURE_FLASH_TICKS) {
+        s_failure_flash_active = false;
+        KBD_RGB_CancelFlash();
+        KBD_RGB_SetState(rf_has_peer() ? KBD_STATE_2G4_BOUND
+                                       : KBD_STATE_BLE_ADVERTISING);
+        KBD_RGB_Process();
     }
     if (s_state == KBD_RADIO_PAIRING) {
         if (rf_rtc_elapsed(RTC_GetCycle32k(), s_pair_started) >= KBD_RF_PAIR_WINDOW_TICKS) {

@@ -37,9 +37,9 @@ set(KBD_RECEIVER_STARTUP_STAGE "3" CACHE STRING "Receiver startup stage: 0=USB, 
 set_property(CACHE KBD_RECEIVER_STARTUP_STAGE PROPERTY STRINGS 0 1 2 3)
 if(KBD_RECEIVER_BUILD)
     set(KBD_RADIO_2G4_ENABLED ON CACHE BOOL "" FORCE)
-    # Preserve the author's model-derived USB product name for the receiver
-    # (BinaryKeyboard5KEY / BinaryKeyboardKNOB); do not introduce a new name.
-    set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "" FORCE)
+    # The receiver has its own PID and role. Reusing a keyboard model name
+    # makes the OS and Studio present the dongle as a configurable keyboard.
+    set(KBD_DEVICE_NAME_OVERRIDE "BinaryKeyboardReceiver" CACHE STRING "" FORCE)
 endif()
 string(TOUPPER "${KEYBOARD}" KEYBOARD_UPPER)
 string(TOUPPER "${KBD_MODEL}" KBD_MODEL_UPPER_RAW)

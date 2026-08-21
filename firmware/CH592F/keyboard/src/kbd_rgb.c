@@ -1011,6 +1011,12 @@ void KBD_RGB_Flash(uint8_t r, uint8_t g, uint8_t b, uint16_t duration_ms)
     WS2812_Update();
 }
 
+void KBD_RGB_CancelFlash(void)
+{
+    s_flash_active = false;
+    s_flash_remain = 0;
+}
+
 void KBD_RGB_FlashLayer(uint8_t layer)
 {
     if (layer >= 5)

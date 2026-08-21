@@ -33,6 +33,10 @@ const deviceDisplayName = computed(() => {
   return device.productName;
 });
 
+const deviceRoleName = computed(() => (
+  deviceStore.capabilities.receiverRole ? '2.4G 接收器' : deviceStore.keyboardTypeName
+));
+
 const {
   latestFirmwareVersion,
   firmwareUpdateKind,
@@ -77,7 +81,7 @@ function openFirmwareUpdate() {
         <span v-if="previewKeyboardType >= 0">
           预览 - {{ KeyboardTypeInfo[currentKeyboardType as KeyboardType]?.name || '未知型号' }}
         </span>
-        <span v-else>{{ deviceDisplayName }} · {{ deviceStore.keyboardTypeName }}</span>
+        <span v-else>{{ deviceDisplayName }} · {{ deviceRoleName }}</span>
         <span v-if="previewKeyboardType < 0" class="version-chip" :class="{ dev: deviceStore.isDevFirmware }">
           {{ deviceStore.firmwareVersionLabel }}
         </span>

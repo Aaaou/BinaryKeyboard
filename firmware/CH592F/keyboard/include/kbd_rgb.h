@@ -219,6 +219,11 @@ extern "C"
     void KBD_RGB_Flash(uint8_t r, uint8_t g, uint8_t b, uint16_t duration_ms);
 
     /**
+     * @brief 立即结束临时闪烁，下一次刷新恢复当前状态指示
+     */
+    void KBD_RGB_CancelFlash(void);
+
+    /**
      * @brief 层切换指示闪烁
      *
      * 切换层时，对应按键 LED 与指示灯同步闪烁 3 次（颜色为该层颜色）。
