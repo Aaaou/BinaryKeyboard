@@ -125,7 +125,8 @@ static int rf_start(void)
     bound.devType = KBD_RF_DEVICE_TYPE;
     bound.deviceId = s_device_id;
     bound.speed = 12;
-    bound.timeout = 150;
+    /* Match the receiver Host window and tolerate USB/TMOS scheduling jitter. */
+    bound.timeout = 500;
     memcpy(bound.OwnInfo, s_local_id, sizeof(s_local_id));
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
@@ -205,7 +206,7 @@ kbd_radio_pair_state_t KBD_Radio2G4_GetPairState(void) { return s_state; }
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count)
 {
     uint8_t report[8] = { modifier, 0, 0, 0, 0, 0, 0, 0 };
-    if (s_state != KBD_RADIO_PAIR_CONNECTED) return -1;
+    if (s_state != KBD_RADIO_PAIR_CONNECTED && s_state != KBD_RADIO_PAIR_BOUND) return -1;
     if (count > 6) count = 6;
     if (keys && count) memcpy(&report[2], keys, count);
     kbd_radio_frame_t frame;
@@ -215,7 +216,7 @@ int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8
 }
 static int rf_send_frame(uint8_t type, const uint8_t *payload, uint8_t payload_len)
 {
-    if (s_state != KBD_RADIO_PAIR_CONNECTED) return -1;
+    if (s_state != KBD_RADIO_PAIR_CONNECTED && s_state != KBD_RADIO_PAIR_BOUND) return -1;
     kbd_radio_frame_t frame;
     uint16_t len = KBD_RadioProtocol_Encode(&frame, type, s_session, ++s_sequence, payload, payload_len);
     return len && len <= 64u ? rf_send((const uint8_t *)&frame, (uint8_t)len) : -1;
@@ -244,7 +245,10 @@ void KBD_Radio2G4_Process(void)
         }
         return;
     }
-    if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
+    /* A bound device may briefly lose the Host callback before the next
+     * packet arrives. Continue keepalive in BOUND state so the RF library can
+     * recover the session instead of waiting for a new pairing cycle. */
+    if (s_state != KBD_RADIO_PAIR_CONNECTED && s_state != KBD_RADIO_PAIR_BOUND) return;
     uint32_t now = RTC_GetCycle32k();
     if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
     if (rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) s_last_keepalive = now;

@@ -14,7 +14,10 @@
 #define RX_PAIR_WINDOW_TICKS (60u * 32768u)
 #define RX_KEYBOARD_DEVICE_TYPE 1u
 #define RX_REPORT_QUEUE_DEPTH 16u
-#define RX_LINK_TIMEOUT_TICKS (3u * 32768u)
+/* RF host callbacks can be delayed by USB management traffic and channel
+ * hopping. Keep the application link alive across a few missed intervals;
+ * the RF library still performs the real peer timeout. */
+#define RX_LINK_TIMEOUT_TICKS (10u * 32768u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -229,7 +232,7 @@ static int start_host(bool pairing)
     apply_filter(pairing);
     host.periTime = 8;
     host.hop = RF_HOP_MANUF_MODE;
-    host.timeout = 100;
+    host.timeout = 500;
     /* WCH marks the Host devType field as reserved. Device type filtering
      * belongs exclusively to rfRoleList_t, configured by apply_filter(). */
     host.devType = 0u;
