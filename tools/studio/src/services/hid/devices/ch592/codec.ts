@@ -169,6 +169,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseSysInfo(resp: DataView): DeviceInfo {
     const d = this.expectOk(resp, 'SYS_INFO');
+    const receiverRole = resp.getUint8(d + 15) === 1;
     return {
       vendorId: (resp.getUint8(d + 1) << 8) | resp.getUint8(d + 2),
       productId: (resp.getUint8(d + 3) << 8) | resp.getUint8(d + 4),
@@ -187,7 +188,9 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       capabilities: {
         ...this.capabilities,
         radio2g4: resp.getUint8(d + 14) !== 0,
-        receiverRole: resp.getUint8(d + 15) === 1,
+        receiverRole,
+        // The RF receiver image has no LOG/LOG_GET/LOG_SET implementation.
+        logs: receiverRole ? false : this.capabilities.logs,
       },
     };
   }
