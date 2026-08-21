@@ -465,7 +465,9 @@ int Receiver_Radio_Init(void)
      * turns so USB enumeration/management is not interrupted by the first
      * RF timer/channel setup. */
     s_boot_host_pending = true;
-    s_boot_host_due = RTC_GetCycle32k() + 3277u; /* 100 ms at 32.768 kHz */
+    /* Run on the next main-loop turn.  A wall-clock delay is unnecessary here
+     * and is unsafe around the CH592 RTC's non-2^32 wrap value. */
+    s_boot_host_due = RTC_GetCycle32k();
     s_host_startup_state = 0u;
     s_host_startup_result = 0u;
     return 0;
