@@ -102,16 +102,13 @@ static void rf_bound_cb(staBound_t *status)
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         rf_nv_save();
         s_state = KBD_RADIO_PAIR_CONNECTED;
-        WS2812_Set_Indicator(0, 180, 0);
-        WS2812_Update();
+        KBD_RGB_Flash(0, 180, 0, 1500);
     } else if (status->status == bleTimeout) {
         s_state = KBD_RADIO_PAIR_BOUND;
-        WS2812_Set_Indicator(180, 0, 0);
-        WS2812_Update();
+        KBD_RGB_Flash(180, 0, 0, 1500);
     } else {
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-        WS2812_Set_Indicator(180, 0, 0);
-        WS2812_Update();
+        KBD_RGB_Flash(180, 0, 0, 1500);
     }
 }
 
@@ -133,6 +130,7 @@ static int rf_start(void)
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
     s_state = KBD_RADIO_PAIRING;
+    KBD_RGB_Flash(0, 0, 180, 60000);
     return RFBound_StartDevice(&bound) == SUCCESS ? 0 : -1;
 }
 
@@ -165,8 +163,7 @@ int KBD_Radio2G4_Init(void)
     rf_nv_load();
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
-    WS2812_Set_Indicator(0, 0, 180);
-    WS2812_Update();
+    KBD_RGB_Flash(0, 0, 180, 1500);
     kbd_tmos_init();
     RF_LibInit(rf_irq_cb);
     s_initialized = true;
