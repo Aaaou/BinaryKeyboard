@@ -5,6 +5,8 @@
 #include "kbd_radio_protocol.h"
 #include "CH59x_common.h"
 #include "RF.h"
+#include "kbd_rgb.h"
+#include "ws2812.h"
 #include <string.h>
 
 #define KBD_RF_BIND_ADDR 0x5000u
@@ -23,11 +25,39 @@ typedef struct __attribute__((packed)) {
 
 static volatile kbd_radio_pair_state_t s_state = KBD_RADIO_PAIR_UNBOUND;
 static uint8_t s_local_id[6], s_peer_id[6], s_device_id = KBD_RF_KEYBOARD_ID;
+/* The standalone RF build has no BLE scheduler to provide TMOS storage. */
+static __attribute__((aligned(4))) uint8_t s_tmos_memory[1024];
 static uint32_t s_session;
 static uint32_t s_sequence;
 static uint32_t s_last_keepalive;
 static bool s_initialized;
+static uint32_t s_led_tick;
+static bool s_led_phase;
 extern RF_DMADESCTypeDef *pDMATxGet;
+
+static void kbd_tmos_enable_irq(void)
+{
+    PFIC_EnableIRQ(BLEL_IRQn);
+    PFIC_EnableIRQ(RTC_IRQn);
+}
+
+static void kbd_tmos_disable_irq(void)
+{
+    PFIC_DisableIRQ(BLEL_IRQn);
+    PFIC_DisableIRQ(RTC_IRQn);
+}
+
+static void kbd_tmos_init(void)
+{
+    tmosConfig_t config;
+    memset(&config, 0, sizeof(config));
+    config.MEMAddr = (uint32_t)s_tmos_memory;
+    config.MEMLen = sizeof(s_tmos_memory);
+    config.TaskMaxCount = 8u;
+    config.enableTmosIrq = kbd_tmos_enable_irq;
+    config.disableTmosIrq = kbd_tmos_disable_irq;
+    TMOS_Init(&config);
+}
 
 static uint32_t rf_rtc_elapsed(uint32_t now, uint32_t then)
 {
@@ -72,10 +102,16 @@ static void rf_bound_cb(staBound_t *status)
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         rf_nv_save();
         s_state = KBD_RADIO_PAIR_CONNECTED;
+        WS2812_Set_Indicator(0, 180, 0);
+        WS2812_Update();
     } else if (status->status == bleTimeout) {
         s_state = KBD_RADIO_PAIR_BOUND;
+        WS2812_Set_Indicator(180, 0, 0);
+        WS2812_Update();
     } else {
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        WS2812_Set_Indicator(180, 0, 0);
+        WS2812_Update();
     }
 }
 
@@ -127,6 +163,11 @@ int KBD_Radio2G4_Init(void)
     if (s_session == 0u) s_session = 1u;
     s_last_keepalive = RTC_GetCycle32k();
     rf_nv_load();
+    WS2812_Init();
+    WS2812_SetIndicatorBrightness(48);
+    WS2812_Set_Indicator(0, 0, 180);
+    WS2812_Update();
+    kbd_tmos_init();
     RF_LibInit(rf_irq_cb);
     s_initialized = true;
     return rf_start();
@@ -188,6 +229,18 @@ int KBD_Radio2G4_SendConsumerReport(uint16_t key)
 }
 void KBD_Radio2G4_Process(void)
 {
+    if (s_state == KBD_RADIO_PAIRING) {
+        uint32_t now = RTC_GetCycle32k();
+        if ((uint32_t)(now - s_led_tick) >= 16384u) {
+            s_led_tick = now;
+            s_led_phase = !s_led_phase;
+            WS2812_Set_Indicator(s_led_phase ? 0 : 0,
+                                 s_led_phase ? 0 : 0,
+                                 s_led_phase ? 180 : 0);
+            WS2812_Update();
+        }
+        return;
+    }
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
     uint32_t now = RTC_GetCycle32k();
     if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
