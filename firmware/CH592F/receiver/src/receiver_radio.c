@@ -196,7 +196,11 @@ static void apply_filter(bool pairing)
     memset(&s_speed_item, 0, sizeof(s_speed_item));
     s_speed_item.deviceId = RF_ROLE_BOUND_ID;
     s_speed_item.rssi = pairing ? -70 : 0;
-    s_speed_item.devType = RX_KEYBOARD_DEVICE_TYPE;
+    /* WCH's reference dongle uses devType=0 in both the bindable and
+     * peer-filtered Host lists. Device type remains part of the application
+     * frame contract; the RFBound filter must not reject a valid keyboard
+     * during the bind transaction. */
+    s_speed_item.devType = 0u;
     if (!pairing) memcpy(s_speed_item.peerInfo, s_nv.peer, sizeof(s_nv.peer));
     RFBound_SetSpeedType(&s_speed_list);
 }
@@ -242,8 +246,8 @@ static int start_host(bool pairing)
     apply_filter(pairing);
     host.periTime = 8;
     host.hop = RF_HOP_MANUF_MODE;
-    /* Keep this comfortably above the keyboard's 100 ms heartbeat. */
-    host.timeout = 1500;
+    /* Match WCH's CH592 reference dongle (dongle/APP/rf.c). */
+    host.timeout = 100;
     /* WCH marks the Host devType field as reserved. Device type filtering
      * belongs exclusively to rfRoleList_t, configured by apply_filter(). */
     host.devType = 0u;

@@ -42,6 +42,10 @@ static uint8_t s_pair_backup_device_id;
 static bool s_pair_backup_valid;
 static uint32_t s_pair_started;
 static bool s_pair_restore_pending;
+/* RFBound uses the same callback for an explicit bind and an automatic
+ * reconnect. Keep those sessions distinct: timeout is recoverable during a
+ * reconnect and must never open the 60 s pairing window. */
+static bool s_manual_pairing;
 extern RF_DMADESCTypeDef *pDMATxGet;
 
 static void kbd_tmos_enable_irq(void)
@@ -116,11 +120,11 @@ static void rf_bound_cb(staBound_t *status)
         s_state = KBD_RADIO_PAIR_BOUND;
         KBD_RGB_Flash(180, 120, 0, 250);
     } else if (status->status == bleTimeout) {
-        /* RFBound timeout only denotes an internal transaction retry.  Do not
-         * turn it into a visible link failure or stop application keepalive. */
-        /* bleTimeout is an RFBound retry indication, not a final pairing
-         * failure. Keep the explicit pairing window alive. */
-        s_state = KBD_RADIO_PAIRING;
+        /* WCH documents bleTimeout as an internal reconnect/bindable
+         * transition. Only an explicit pairing session owns the pairing
+         * window; an already-bound keyboard remains bound here. */
+        if (s_manual_pairing) s_state = KBD_RADIO_PAIRING;
+        else s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
     } else {
         if (s_pair_backup_valid) {
             memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
@@ -151,10 +155,12 @@ static int rf_start(bool pairing)
     bound.speed = 12;
     /* Permit scheduling and channel-hop jitter; valid frames are supervised
      * independently by the receiver's application-level watchdog. */
-    bound.timeout = 1500;
+    /* Match WCH's CH592 reference device (rf_device.c). */
+    bound.timeout = 150;
     memcpy(bound.OwnInfo, s_local_id, sizeof(s_local_id));
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
+    s_manual_pairing = pairing;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
     if (pairing) {
         s_pair_started = RTC_GetCycle32k();
@@ -211,6 +217,7 @@ int KBD_Radio2G4_StartPairing(void)
 {
     if (!s_initialized) return -1;
     RFRole_Shut();
+    s_manual_pairing = true;
     memcpy(s_pair_backup_peer, s_peer_id, sizeof(s_peer_id));
     s_pair_backup_device_id = s_device_id;
     s_pair_backup_valid = rf_has_peer();
@@ -234,6 +241,7 @@ int KBD_Radio2G4_CancelPairing(void)
 {
     if (!s_initialized || s_state != KBD_RADIO_PAIRING) return -1;
     RFRole_Shut();
+    s_manual_pairing = false;
     if (s_pair_backup_valid) {
         memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
         s_device_id = s_pair_backup_device_id;
@@ -250,6 +258,7 @@ int KBD_Radio2G4_ClearPairing(bool force)
     (void)force;
     if (!s_initialized) return -1;
     RFRole_Shut(); RFRole_ClearTxData(s_device_id);
+    s_manual_pairing = false;
     if (EEPROM_ERASE(KBD_RF_BIND_ADDR, EEPROM_PAGE_SIZE) != 0) return -1;
     memset(s_peer_id, 0, sizeof(s_peer_id)); s_device_id = KBD_RF_KEYBOARD_ID; s_state = KBD_RADIO_PAIR_UNBOUND;
     return 0;
