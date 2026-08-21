@@ -17,10 +17,9 @@
 /* RF host callbacks can be delayed by USB management traffic and channel
  * hopping. Keep the application link alive across a few missed intervals;
  * the RF library still performs the real peer timeout. */
-/* A keyboard heartbeat arrives every 100 ms. Release every host-side key
- * after three missed heartbeats, before the OS key-repeat delay can turn a
- * lost release packet into uncontrolled repeated input. */
-#define RX_LINK_TIMEOUT_TICKS ((3u * 32768u) / 10u)
+/* A keyboard heartbeat arrives every 100 ms. Five missed heartbeats balance
+ * prompt stuck-key release with RF scheduling and channel-hop jitter. */
+#define RX_LINK_TIMEOUT_TICKS (32768u / 2u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;

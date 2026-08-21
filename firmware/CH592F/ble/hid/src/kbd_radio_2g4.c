@@ -401,9 +401,11 @@ void KBD_Radio2G4_Process(void)
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
     uint32_t now = RTC_GetCycle32k();
     if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
-    /* Keepalive must never build a backlog behind input state. Queue one
-     * only while WCH's TX ring is completely idle. */
-    if (KBD_Radio2G4_GetTxDescriptorsBusy() == 0u &&
+    /* WCH normally keeps several descriptors in its RF pipeline, so waiting
+     * for an entirely empty ring can suppress every heartbeat during a held
+     * key. Allow bounded keepalives while reserving one application slot for
+     * the next key transition (especially release). */
+    if (KBD_Radio2G4_GetTxDescriptorsBusy() < (KBD_RF_APP_TX_LIMIT - 1u) &&
         rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
         s_last_keepalive = now;
     }
