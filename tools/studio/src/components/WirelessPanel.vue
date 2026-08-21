@@ -50,7 +50,21 @@ async function run(action: () => Promise<void>, message: string) {
   catch (error) { showToast('error', '操作失败', error instanceof Error ? error.message : '设备拒绝了操作'); }
   finally { busy.value = false; }
 }
-const start = () => run(() => hidService.startPairing(), '已进入 60 秒配码窗口');
+async function start() {
+  busy.value = true;
+  try {
+    // Pairing starts an RF role asynchronously.  Acknowledging the request is
+    // deliberately distinct from completing a pairing session, so a host
+    // startup that takes time cannot be reported as a UI command timeout.
+    await hidService.startPairing();
+    status.value = { ...status.value, state: 'pairing' };
+    showToast('success', '配码请求已受理', '接收器正在进入 60 秒配码窗口');
+  } catch (error) {
+    showToast('error', '操作失败', error instanceof Error ? error.message : '设备拒绝了操作');
+  } finally {
+    busy.value = false;
+  }
+}
 const cancel = () => run(() => hidService.cancelPairing(), '已取消配码');
 const clear = () => run(() => hidService.clearPairing(false), '已请求双端清除；远端离线时请使用重新配码');
 const savePollRate = () => run(() => hidService.setPollRate(pollRate.value), `已设置为 ${pollRate.value} Hz`);

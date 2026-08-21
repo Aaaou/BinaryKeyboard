@@ -27,7 +27,10 @@ def package(build_dir: Path, stem: str) -> tuple[Path, Path]:
     return full_hex, full_bin
 
 
-def configure_and_build(cmake: Path, build_dir: Path, stage: int, manual_host: bool = False) -> None:
+def configure_and_build(
+    cmake: Path, build_dir: Path, stage: int, manual_host: bool = False,
+    early_command_ack: bool = False,
+) -> None:
     firmware_dir = PROJECT_ROOT / "firmware" / "CH592F"
     subprocess.run([
         str(cmake), "-S", str(firmware_dir), "-B", str(build_dir), "-G", "Ninja",
@@ -35,6 +38,7 @@ def configure_and_build(cmake: Path, build_dir: Path, stage: int, manual_host: b
         f"-DKBD_RECEIVER_STARTUP_STAGE={stage}",
         "-DKBD_RECEIVER_USB_DIAGNOSTIC=OFF",
         f"-DKBD_RECEIVER_MANUAL_HOST_DIAGNOSTIC={'ON' if manual_host else 'OFF'}",
+        f"-DKBD_RECEIVER_EARLY_COMMAND_ACK={'ON' if early_command_ack else 'OFF'}",
     ], check=True)
     subprocess.run([str(cmake), "--build", str(build_dir)], check=True)
 
@@ -50,11 +54,18 @@ def main() -> int:
     time_dir = firmware_dir / "build" / "receiver-time-diagnostic"
     rf_library_dir = firmware_dir / "build" / "receiver-rf-library-diagnostic"
     manual_host_dir = firmware_dir / "build" / "receiver-manual-host-diagnostic"
+    host_ack_dir = firmware_dir / "build" / "receiver-host-ack-diagnostic"
     configure_and_build(cmake, receiver_dir, 3)
     configure_and_build(cmake, diagnostic_dir, 0)
     configure_and_build(cmake, time_dir, 1)
     configure_and_build(cmake, rf_library_dir, 2)
+    # This is the known-enumerating manual-host baseline.  Keep command
+    # completion deferred so it stays binary-compatible with its first test.
     configure_and_build(cmake, manual_host_dir, 3, manual_host=True)
+    # Host startup is asynchronous by nature.  This diagnostic acknowledges
+    # the request before the WCH Host API is entered, so USB and RF effects
+    # can be observed separately.
+    configure_and_build(cmake, host_ack_dir, 3, manual_host=True, early_command_ack=True)
 
     jumpiap_build()
     bootloader_build()
@@ -70,6 +81,9 @@ def main() -> int:
     manual_host_hex, manual_host_bin = package(
         manual_host_dir, "CH592F-RECEIVER-MANUAL-HOST-DIAGNOSTIC"
     )
+    host_ack_hex, host_ack_bin = package(
+        host_ack_dir, "CH592F-RECEIVER-HOST-ACK-DIAGNOSTIC"
+    )
     print(f"Receiver FULL HEX (ISP): {full_hex}")
     print(f"Receiver FULL BIN (ISP): {full_bin}")
     print(f"Receiver USB diagnostic FULL HEX (ISP): {diagnostic_hex}")
@@ -80,6 +94,8 @@ def main() -> int:
     print(f"Receiver RF library diagnostic FULL BIN (ISP): {rf_library_bin}")
     print(f"Receiver manual Host diagnostic FULL HEX (ISP): {manual_host_hex}")
     print(f"Receiver manual Host diagnostic FULL BIN (ISP): {manual_host_bin}")
+    print(f"Receiver Host ACK diagnostic FULL HEX (ISP): {host_ack_hex}")
+    print(f"Receiver Host ACK diagnostic FULL BIN (ISP): {host_ack_bin}")
     return 0
 
 
