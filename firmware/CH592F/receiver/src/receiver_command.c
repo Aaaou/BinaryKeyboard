@@ -77,6 +77,15 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         if (frame->cmd == KBD_CMD_RADIO_PAIR_START) ret=Receiver_Radio_StartPairing();
         else if (frame->cmd == KBD_CMD_RADIO_PAIR_CANCEL) ret=Receiver_Radio_CancelPairing();
         else ret=Receiver_Radio_ClearPairing();
+#if defined(KBD_RECEIVER_MANUAL_HOST_DIAGNOSTIC)
+        /* The diagnostic build acknowledges queueing before RFBound_StartHost
+         * runs.  This prevents a blocking vendor call from being reported as
+         * a WebHID timeout; SYS_STATUS carries the actual result. */
+        if (ret == 0) {
+            KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
+            return 0;
+        }
+#endif
         goto deferred;
 #else
         ret=-1; break;
