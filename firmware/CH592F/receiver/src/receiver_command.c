@@ -69,7 +69,10 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[4]=125; resp[5]=0; resp[6]=250; resp[7]=0;
         resp[8]=244; resp[9]=1; resp[10]=232; resp[11]=3; len=12; break;
     case KBD_CMD_RADIO_PAIR_STATUS:
-        resp[1]=(uint8_t)Receiver_Radio_GetState(); len=8; break;
+        /* [OK][state][session/reserved][peer device id][reserved x4]. */
+        resp[1]=(uint8_t)Receiver_Radio_GetState();
+        resp[3]=Receiver_Radio_GetPeerDeviceId();
+        len=8; break;
     case KBD_CMD_RADIO_PAIR_START:
     case KBD_CMD_RADIO_PAIR_CANCEL:
     case KBD_CMD_RADIO_PAIR_CLEAR:

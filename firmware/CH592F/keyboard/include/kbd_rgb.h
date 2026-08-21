@@ -49,6 +49,11 @@ extern "C"
 #define KBD_IND_BLE_CONN_G 255
 #define KBD_IND_BLE_CONN_B 0
 
+/** @name 2.4G 已绑定但未连接 - 琥珀色 */
+#define KBD_IND_2G4_BOUND_R 255
+#define KBD_IND_2G4_BOUND_G 140
+#define KBD_IND_2G4_BOUND_B 16
+
 /** @name USB 已连接 - 白色 */
 #define KBD_IND_USB_CONN_R 255
 #define KBD_IND_USB_CONN_G 255

@@ -364,6 +364,8 @@ extern "C"
     KBD_STATE_BLE_DISCONNECTED, /**< 蓝牙未连接 - 红色慢呼吸 */
     KBD_STATE_BLE_ADVERTISING,  /**< 蓝牙广播中 - 蓝色呼吸 */
     KBD_STATE_BLE_CONNECTED,    /**< 蓝牙已连接 - 绿色常亮 */
+    KBD_STATE_2G4_BOUND,         /**< 2.4G 已绑定但尚未收到有效数据 - 琥珀色慢呼吸 */
+    KBD_STATE_2G4_PAIRING,       /**< 2.4G 配码窗口 - 蓝色呼吸 */
     KBD_STATE_LOW_BATTERY,      /**< 低电量警告 - 红色快闪 */
     KBD_STATE_CHARGING,         /**< 充电中 - 琥珀色短脉冲 */
     KBD_STATE_SLEEP_READY,      /**< 低功耗待机 - 蓝青色短呼吸 */

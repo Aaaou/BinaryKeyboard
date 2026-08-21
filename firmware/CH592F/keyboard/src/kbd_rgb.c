@@ -415,6 +415,26 @@ static void GetIndicatorParams(kbd_state_t state, uint8_t *r, uint8_t *g, uint8_
         *repeat = false;
         break;
 
+    case KBD_STATE_2G4_BOUND:
+        *r = KBD_IND_2G4_BOUND_R;
+        *g = KBD_IND_2G4_BOUND_G;
+        *b = KBD_IND_2G4_BOUND_B;
+        *effect = 1;       /* 慢呼吸，表示有绑定但尚未收到有效帧 */
+        *period_ms = 2000;
+        *active_ms = 2000;
+        *repeat = true;
+        break;
+
+    case KBD_STATE_2G4_PAIRING:
+        *r = KBD_IND_BLE_ADV_R;
+        *g = KBD_IND_BLE_ADV_G;
+        *b = KBD_IND_BLE_ADV_B;
+        *effect = 1;
+        *period_ms = 1000;
+        *active_ms = 1000;
+        *repeat = true;
+        break;
+
     case KBD_STATE_LOW_BATTERY:
         *r = KBD_IND_LOW_BATT_R;
         *g = KBD_IND_LOW_BATT_G;

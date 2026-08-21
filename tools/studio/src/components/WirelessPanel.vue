@@ -15,7 +15,7 @@
         <option v-for="rate in pollRates" :key="rate" :value="rate">{{ rate }} Hz</option>
       </select>
     </div>
-    <small>首次配对：未绑定的接收器会自动等待配码，再通过 USB 连接键盘并点击“开始配码”。更换设备时清除任意一端后，两端重新进入配码即可，接收器不会报废。</small>
+    <small>配码命令只作用于当前通过 USB 连接的设备。接收器和键盘需要分别进入配码窗口：先连接接收器开始配码，再连接键盘开始配码；两端都显示“已绑定”后才算完成。更换设备时清除对应一端即可重新配码。</small>
   </div>
 </template>
 
@@ -58,7 +58,8 @@ async function start() {
     // startup that takes time cannot be reported as a UI command timeout.
     await hidService.startPairing();
     status.value = { ...status.value, state: 'pairing' };
-    showToast('success', '配码请求已受理', '接收器正在进入 60 秒配码窗口');
+    const target = caps.value.role === 'receiver' ? '接收器' : '键盘';
+    showToast('success', '配码请求已受理', `${target}正在进入 60 秒配码窗口`);
   } catch (error) {
     showToast('error', '操作失败', error instanceof Error ? error.message : '设备拒绝了操作');
   } finally {

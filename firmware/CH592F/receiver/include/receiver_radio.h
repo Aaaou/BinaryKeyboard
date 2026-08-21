@@ -13,6 +13,8 @@ int Receiver_Radio_StartPairing(void);
 int Receiver_Radio_CancelPairing(void);
 int Receiver_Radio_ClearPairing(void);
 kbd_radio_pair_state_t Receiver_Radio_GetState(void);
+uint8_t Receiver_Radio_GetPeerDeviceId(void);
+bool Receiver_Radio_HasPeer(void);
 uint16_t Receiver_Radio_GetPollRate(void);
 int Receiver_Radio_SetPollRate(uint16_t rate);
 bool Receiver_Radio_TakeControlResult(int *result);

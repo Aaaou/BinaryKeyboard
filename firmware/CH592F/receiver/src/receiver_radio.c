@@ -569,6 +569,8 @@ int Receiver_Radio_StartPairing(void) { return request_control(RX_CONTROL_PAIR_S
 int Receiver_Radio_CancelPairing(void) { return request_control(RX_CONTROL_PAIR_CANCEL, 0u); }
 int Receiver_Radio_ClearPairing(void) { return request_control(RX_CONTROL_PAIR_CLEAR, 0u); }
 kbd_radio_pair_state_t Receiver_Radio_GetState(void) { return s_state; }
+uint8_t Receiver_Radio_GetPeerDeviceId(void) { return has_peer() ? s_nv.device_id : RF_ROLE_ID_INVALD; }
+bool Receiver_Radio_HasPeer(void) { return has_peer(); }
 uint16_t Receiver_Radio_GetPollRate(void) { return s_nv.poll_rate; }
 int Receiver_Radio_SetPollRate(uint16_t rate)
 {

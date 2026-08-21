@@ -1099,11 +1099,12 @@ static kbd_state_t KBD_Mode_ResolveIndicatorState(void)
         case KBD_RADIO_PAIR_CONNECTED:
             return KBD_STATE_BLE_CONNECTED;    /* green */
         case KBD_RADIO_PAIRING:
+            return KBD_STATE_2G4_PAIRING;      /* blue */
         case KBD_RADIO_PAIR_UNBOUND:
-            return KBD_STATE_BLE_ADVERTISING;  /* blue */
+            return KBD_STATE_BLE_ADVERTISING;  /* blue, no stored peer */
         case KBD_RADIO_PAIR_BOUND:
         default:
-            return KBD_STATE_BLE_DISCONNECTED; /* red: bound, not active */
+            return KBD_STATE_2G4_BOUND;        /* amber: bound, not active */
         }
     }
 
