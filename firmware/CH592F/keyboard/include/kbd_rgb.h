@@ -212,6 +212,11 @@ extern "C"
     void KBD_RGB_Poll(void);
 
     /**
+     * @brief 2.4G 构建的 1 ms 时基输入（只累计待处理时间，不操作灯光）
+     */
+    void KBD_RGB_TimerTick1ms(void);
+
+    /**
      * @brief 临时闪烁指示
      *
      * 用于按键反馈或提示，闪烁后自动恢复原状态

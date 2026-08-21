@@ -30,7 +30,6 @@
 
 /** @brief RGB 更新间隔 (毫秒) */
 #define RGB_UPDATE_INTERVAL_MS 20
-#define RGB_UPDATE_INTERVAL_RTC_TICKS ((32768u * RGB_UPDATE_INTERVAL_MS) / 1000u)
 
 /** @brief TMOS 定时事件 */
 #define RGB_UPDATE_EVT 0x0001
@@ -89,8 +88,8 @@ static bool s_low_power_active = false;
 static bool s_scheduler_enabled = true;
 
 #if KBD_RADIO_2G4_ENABLED
-/** @brief RFBound shares TMOS/Timer3, so 2.4G drives RGB from the main loop. */
-static uint32_t s_poll_last_rtc;
+/** @brief Timer0 ISR only accumulates time; WS2812 DMA remains main-loop owned. */
+static volatile uint8_t s_poll_elapsed_ms;
 #endif
 
 /**
@@ -675,7 +674,7 @@ void KBD_RGB_Init(void)
     ClearPressEffects();
 
 #if KBD_RADIO_2G4_ENABLED
-    s_poll_last_rtc = RTC_GetCycle32k();
+    s_poll_elapsed_ms = 0;
 #else
     s_rgb_task_id = TMOS_ProcessEventRegister(KBD_RGB_ProcessEvent);
     tmos_start_task(s_rgb_task_id, RGB_UPDATE_EVT, MS1_TO_SYSTEM_TIME(RGB_UPDATE_INTERVAL_MS));
@@ -684,6 +683,11 @@ void KBD_RGB_Init(void)
 
 void KBD_RGB_Process(void)
 {
+    if (!s_scheduler_enabled)
+    {
+        return;
+    }
+
     kbd_rgb_config_t *cfg = KBD_GetRgbConfig();
 
     /* Pairing owns the visible indicator: suppress all key pixels so a
@@ -1003,10 +1007,7 @@ void KBD_RGB_SetSchedulerEnabled(bool enable)
 
     s_scheduler_enabled = enable;
 #if KBD_RADIO_2G4_ENABLED
-    if (enable)
-    {
-        s_poll_last_rtc = RTC_GetCycle32k();
-    }
+    s_poll_elapsed_ms = 0;
     return;
 #else
     if (!enable)
@@ -1028,20 +1029,33 @@ void KBD_RGB_Poll(void)
         return;
     }
 
-    uint32_t now = RTC_GetCycle32k();
-    uint32_t elapsed = now >= s_poll_last_rtc
-        ? now - s_poll_last_rtc
-        : (RTC_MAX_COUNT - s_poll_last_rtc) + now + 1u;
-    if (elapsed >= RGB_UPDATE_INTERVAL_RTC_TICKS)
+    if (s_poll_elapsed_ms >= RGB_UPDATE_INTERVAL_MS)
     {
-        s_poll_last_rtc = now;
+        s_poll_elapsed_ms = 0;
         KBD_RGB_Process();
+    }
+#endif
+}
+
+void KBD_RGB_TimerTick1ms(void)
+{
+#if KBD_RADIO_2G4_ENABLED
+    if (s_scheduler_enabled && s_poll_elapsed_ms < RGB_UPDATE_INTERVAL_MS)
+    {
+        s_poll_elapsed_ms++;
     }
 #endif
 }
 
 void KBD_RGB_Flash(uint8_t r, uint8_t g, uint8_t b, uint16_t duration_ms)
 {
+    if (!s_scheduler_enabled)
+    {
+        s_flash_active = false;
+        s_flash_remain = 0;
+        return;
+    }
+
     s_flash_active = true;
     s_flash_r = r;
     s_flash_g = g;
