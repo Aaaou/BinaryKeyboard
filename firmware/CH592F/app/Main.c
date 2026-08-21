@@ -44,6 +44,11 @@ __attribute__((noinline)) void Main_Circulation(void)
     while (1) {
         TMOS_SystemProcess();
         KBD_Mode_Process();
+#if KBD_RADIO_2G4_ENABLED
+        /* RFBound shares TMOS/Timer3. Keep visual timing independent from RF
+         * role events so status effects cannot freeze on their last colour. */
+        KBD_RGB_Poll();
+#endif
         KBD_Core_Process();
         KBD_Log_Flush();
     }

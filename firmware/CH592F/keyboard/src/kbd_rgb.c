@@ -30,6 +30,7 @@
 
 /** @brief RGB 更新间隔 (毫秒) */
 #define RGB_UPDATE_INTERVAL_MS 20
+#define RGB_UPDATE_INTERVAL_RTC_TICKS ((32768u * RGB_UPDATE_INTERVAL_MS) / 1000u)
 
 /** @brief TMOS 定时事件 */
 #define RGB_UPDATE_EVT 0x0001
@@ -77,13 +78,20 @@ static const uint8_t s_layer_to_key[KBD_DEFAULT_LAYERS] = KBD_LAYER_TO_KEY_MAP;
 static const uint8_t s_logical_to_physical[KBD_NUM_KEYS] = KBD_LOGICAL_TO_PHYSICAL_MAP;
 
 /** @brief TMOS 任务 ID */
+#if !KBD_RADIO_2G4_ENABLED
 static tmosTaskID s_rgb_task_id = TASK_NO_TASK;
+#endif
 
 /** @brief 低功耗指示灯模式：仅驱动指示灯，不驱动按键灯 */
 static bool s_low_power_active = false;
 
 /** @brief RGB 周期任务是否启用 */
 static bool s_scheduler_enabled = true;
+
+#if KBD_RADIO_2G4_ENABLED
+/** @brief RFBound shares TMOS/Timer3, so 2.4G drives RGB from the main loop. */
+static uint32_t s_poll_last_rtc;
+#endif
 
 /**
  * @brief 将逻辑按键索引转换为 WS2812 LED 索引
@@ -298,6 +306,7 @@ static void ProcessPressEffects(kbd_rgb_config_t *cfg)
 /**
  * @brief TMOS 事件处理
  */
+#if !KBD_RADIO_2G4_ENABLED
 static uint16_t KBD_RGB_ProcessEvent(uint8_t task_id, uint16_t events)
 {
     (void)task_id;
@@ -313,6 +322,7 @@ static uint16_t KBD_RGB_ProcessEvent(uint8_t task_id, uint16_t events)
     }
     return 0;
 }
+#endif
 
 /**
  * @brief 应用亮度到颜色值
@@ -664,8 +674,12 @@ void KBD_RGB_Init(void)
     s_layer_flash_active = false;
     ClearPressEffects();
 
+#if KBD_RADIO_2G4_ENABLED
+    s_poll_last_rtc = RTC_GetCycle32k();
+#else
     s_rgb_task_id = TMOS_ProcessEventRegister(KBD_RGB_ProcessEvent);
     tmos_start_task(s_rgb_task_id, RGB_UPDATE_EVT, MS1_TO_SYSTEM_TIME(RGB_UPDATE_INTERVAL_MS));
+#endif
 }
 
 void KBD_RGB_Process(void)
@@ -988,6 +1002,13 @@ void KBD_RGB_SetSchedulerEnabled(bool enable)
     }
 
     s_scheduler_enabled = enable;
+#if KBD_RADIO_2G4_ENABLED
+    if (enable)
+    {
+        s_poll_last_rtc = RTC_GetCycle32k();
+    }
+    return;
+#else
     if (!enable)
     {
         tmos_stop_task(s_rgb_task_id, RGB_UPDATE_EVT);
@@ -996,6 +1017,27 @@ void KBD_RGB_SetSchedulerEnabled(bool enable)
 
     tmos_stop_task(s_rgb_task_id, RGB_UPDATE_EVT);
     tmos_start_task(s_rgb_task_id, RGB_UPDATE_EVT, MS1_TO_SYSTEM_TIME(RGB_UPDATE_INTERVAL_MS));
+#endif
+}
+
+void KBD_RGB_Poll(void)
+{
+#if KBD_RADIO_2G4_ENABLED
+    if (!s_scheduler_enabled)
+    {
+        return;
+    }
+
+    uint32_t now = RTC_GetCycle32k();
+    uint32_t elapsed = now >= s_poll_last_rtc
+        ? now - s_poll_last_rtc
+        : (RTC_MAX_COUNT - s_poll_last_rtc) + now + 1u;
+    if (elapsed >= RGB_UPDATE_INTERVAL_RTC_TICKS)
+    {
+        s_poll_last_rtc = now;
+        KBD_RGB_Process();
+    }
+#endif
 }
 
 void KBD_RGB_Flash(uint8_t r, uint8_t g, uint8_t b, uint16_t duration_ms)

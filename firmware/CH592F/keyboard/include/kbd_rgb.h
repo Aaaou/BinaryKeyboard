@@ -207,6 +207,11 @@ extern "C"
     void KBD_RGB_SetSchedulerEnabled(bool enable);
 
     /**
+     * @brief 2.4G 构建的主循环定时驱动（其他构建为空操作）
+     */
+    void KBD_RGB_Poll(void);
+
+    /**
      * @brief 临时闪烁指示
      *
      * 用于按键反馈或提示，闪烁后自动恢复原状态
