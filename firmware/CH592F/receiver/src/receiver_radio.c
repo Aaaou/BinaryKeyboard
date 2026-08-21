@@ -101,6 +101,7 @@ static bool s_boot_host_pending;
 static uint32_t s_boot_host_due;
 static bool s_pair_success_logged;
 static bool s_pair_timeout_logged;
+static volatile bool s_host_restart_pending;
 static volatile bool s_rf_disconnect_pending;
 static uint32_t s_rf_disconnect_started;
 static volatile uint8_t s_emergency_release_mask;
@@ -259,6 +260,9 @@ static void bound_cb(staBound_t *status)
         } else if (s_state != KBD_RADIO_PAIR_CONNECTED) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         }
+        /* Match WCH dongle rf.c: FAILURE clears stale RX data and posts the
+         * peer-filtered Host start event. Defer both calls out of RF context. */
+        if (has_peer()) s_host_restart_pending = true;
         Receiver_Log_Event(RX_LOG_PAIR_FAILURE, KBD_RECEIVER_STARTUP_STAGE, status->status);
     }
 }
@@ -282,7 +286,8 @@ static int start_host(bool pairing)
      * belongs exclusively to rfRoleList_t, configured by apply_filter(). */
     host.devType = 0u;
     memcpy(host.OwnInfo, s_local, sizeof(s_local));
-    if (!pairing) memcpy(host.PeerInfo, s_nv.peer, sizeof(s_nv.peer));
+    /* WCH's dongle reference filters a saved peer through rfRoleList_t and
+     * leaves rfBoundHost_t.PeerInfo zeroed. Keep a single source of truth. */
     host.rfBoundCB = bound_cb;
     if (pairing) s_pair_started = RTC_GetCycle32k();
     /* A link-age value belongs to the current RF Host session. Do not carry
@@ -314,6 +319,7 @@ static void stop_host(void)
     if (!s_host_active) return;
     RFRole_Shut();
     s_host_active = false;
+    s_host_restart_pending = false;
 }
 
 static void keyboard_enqueue(const USB_KeyboardReport_t *report)
@@ -637,6 +643,11 @@ void Receiver_Radio_Process(void)
 {
     process_binding_save();
     process_control();
+    if (s_host_restart_pending) {
+        s_host_restart_pending = false;
+        RFRole_ClearRxData(s_nv.device_id);
+        start_host(false);
+    }
     if (s_boot_host_pending &&
         rtc_elapsed(RTC_GetCycle32k(), s_boot_host_due) < 0x80000000u) {
         s_boot_host_pending = false;

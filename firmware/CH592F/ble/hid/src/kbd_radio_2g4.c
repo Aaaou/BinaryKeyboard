@@ -13,12 +13,9 @@
 #define KBD_RF_BIND_MAGIC 0x3244424Bu
 #define KBD_RF_DEVICE_TYPE 1u
 #define KBD_RF_KEYBOARD_ID 0u
-/* Allow RFBound's delayed-disconnect path to complete before restarting the
- * RF role. Application traffic must not be used as a link watchdog. */
+/* Allow RFBound's delayed-disconnect path to settle before updating the
+ * application-visible state. Application traffic is not a link watchdog. */
 #define KBD_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
-#define KBD_RF_RECONNECT_FAST_TICKS ((32768u * 250u) / 1000u)
-#define KBD_RF_RECONNECT_NORMAL_TICKS (1u * 32768u)
-#define KBD_RF_RECONNECT_SLOW_TICKS (5u * 32768u)
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
 typedef struct __attribute__((packed)) {
@@ -43,7 +40,7 @@ static uint8_t s_pair_backup_peer[6];
 static uint8_t s_pair_backup_device_id;
 static bool s_pair_backup_valid;
 static uint32_t s_pair_started;
-static bool s_pair_restore_pending;
+static volatile bool s_rf_restart_pending;
 /* RFBound uses the same callback for an explicit bind and an automatic
  * reconnect. Keep those sessions distinct: timeout is recoverable during a
  * reconnect and must never open the 60 s pairing window. */
@@ -58,29 +55,11 @@ static volatile uint8_t s_indicator_event;
 static volatile bool s_rf_ready;
 static volatile bool s_disconnect_pending;
 static uint32_t s_disconnect_started;
-static uint32_t s_disconnect_delay;
-static uint8_t s_reconnect_attempts;
 extern RF_DMADESCTypeDef *pDMATxGet;
 extern RF_DMADESCTypeDef DMATxDscrTab[RF_TXBUFNB];
 
 static int rf_start(bool pairing);
 static bool rf_has_peer(void);
-
-static uint32_t rf_reconnect_delay(void)
-{
-    if (s_reconnect_attempts == 0u) return KBD_RF_DISCONNECT_GRACE_TICKS;
-    if (s_reconnect_attempts < 3u) return KBD_RF_RECONNECT_FAST_TICKS;
-    if (s_reconnect_attempts < 10u) return KBD_RF_RECONNECT_NORMAL_TICKS;
-    return KBD_RF_RECONNECT_SLOW_TICKS;
-}
-
-static void rf_schedule_reconnect(void)
-{
-    if (s_disconnect_pending || !rf_has_peer()) return;
-    s_disconnect_pending = true;
-    s_disconnect_started = RTC_GetCycle32k();
-    s_disconnect_delay = rf_reconnect_delay();
-}
 
 static void kbd_tmos_enable_irq(void)
 {
@@ -160,7 +139,7 @@ static void rf_bound_cb(staBound_t *status)
         s_manual_pairing = false;
         s_rf_ready = true;
         s_disconnect_pending = false;
-        s_reconnect_attempts = 0u;
+        s_rf_restart_pending = false;
         /* Match WCH's reference device state machine: application traffic is
          * allowed only after RFBound reports SUCCESS. BOUND means a saved
          * peer exists but the RF session is not ready yet. */
@@ -172,9 +151,12 @@ static void rf_bound_cb(staBound_t *status)
         s_rf_ready = false;
         if (s_manual_pairing) s_state = KBD_RADIO_PAIRING;
         else {
-            /* First allow RFBound's automatic bindable transition to recover.
-             * If it does not, the main loop performs WCH's RF_ReStart flow. */
-            rf_schedule_reconnect();
+            /* WCH RFBound owns this reconnect transition. Its reference
+             * device does not stop or restart the role on bleTimeout. */
+            if (!s_disconnect_pending) {
+                s_disconnect_pending = true;
+                s_disconnect_started = RTC_GetCycle32k();
+            }
         }
     } else {
         s_rf_ready = false;
@@ -184,8 +166,9 @@ static void rf_bound_cb(staBound_t *status)
             s_device_id = s_pair_backup_device_id;
             s_pair_backup_valid = false;
         }
-        if (s_manual_pairing) s_pair_restore_pending = true;
-        else rf_schedule_reconnect();
+        /* Match WCH rf_device.c: FAILURE re-posts RF_START_BOUND_EVENT.
+         * The callback runs in RF context, so start from the main loop. */
+        s_rf_restart_pending = rf_has_peer();
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         s_indicator_event = 1u;
     }
@@ -281,9 +264,8 @@ void KBD_Radio2G4_Stop(void)
     if (s_initialized) RFRole_Shut();
     s_initialized = false;
     s_manual_pairing = false;
-    s_pair_restore_pending = false;
+    s_rf_restart_pending = false;
     s_disconnect_pending = false;
-    s_reconnect_attempts = 0u;
     s_rf_ready = false;
 }
 int KBD_Radio2G4_StartPairing(void)
@@ -291,8 +273,7 @@ int KBD_Radio2G4_StartPairing(void)
     if (!s_initialized) return -1;
     RFRole_Shut();
     s_disconnect_pending = false;
-    s_pair_restore_pending = false;
-    s_reconnect_attempts = 0u;
+    s_rf_restart_pending = false;
     s_manual_pairing = true;
     memcpy(s_pair_backup_peer, s_peer_id, sizeof(s_peer_id));
     s_pair_backup_device_id = s_device_id;
@@ -318,9 +299,8 @@ int KBD_Radio2G4_CancelPairing(void)
     if (!s_initialized || s_state != KBD_RADIO_PAIRING) return -1;
     RFRole_Shut();
     s_manual_pairing = false;
-    s_pair_restore_pending = false;
+    s_rf_restart_pending = false;
     s_disconnect_pending = false;
-    s_reconnect_attempts = 0u;
     if (s_pair_backup_valid) {
         memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
         s_device_id = s_pair_backup_device_id;
@@ -339,9 +319,8 @@ int KBD_Radio2G4_ClearPairing(bool force)
     RFRole_Shut(); RFRole_ClearTxData(s_device_id);
     s_manual_pairing = false;
     s_pair_backup_valid = false;
-    s_pair_restore_pending = false;
+    s_rf_restart_pending = false;
     s_disconnect_pending = false;
-    s_reconnect_attempts = 0u;
     s_rf_ready = false;
     if (EEPROM_ERASE(KBD_RF_BIND_ADDR, EEPROM_PAGE_SIZE) != 0) return -1;
     memset(s_peer_id, 0, sizeof(s_peer_id)); s_device_id = KBD_RF_KEYBOARD_ID; s_state = KBD_RADIO_PAIR_UNBOUND;
@@ -428,24 +407,15 @@ void KBD_Radio2G4_Process(void)
         }
         return;
     }
-    if (s_pair_restore_pending) {
-        s_pair_restore_pending = false;
+    if (s_rf_restart_pending) {
+        s_rf_restart_pending = false;
         if (rf_has_peer()) rf_start(false);
     }
     if (s_disconnect_pending &&
         rf_rtc_elapsed(RTC_GetCycle32k(), s_disconnect_started) >=
-            s_disconnect_delay) {
+            KBD_RF_DISCONNECT_GRACE_TICKS) {
         s_disconnect_pending = false;
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-        if (rf_has_peer()) {
-            /* Equivalent to WCH RF_ReStart(): completely restart the RF role
-             * with the persisted peer, then keep retrying with bounded
-             * backoff until the receiver is available again. */
-            RFRole_Shut();
-            RF_LibInit(rf_irq_cb);
-            if (s_reconnect_attempts < 0xFFu) s_reconnect_attempts++;
-            if (rf_start(false) != 0) rf_schedule_reconnect();
-        }
     }
     /* RFBound owns idle supervision. Absence of new application HID frames is
      * normal for a keyboard and must never be treated as a disconnected link. */
