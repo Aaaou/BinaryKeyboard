@@ -115,6 +115,11 @@ static void rf_bound_cb(staBound_t *status)
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         rf_nv_save();
         s_pair_backup_valid = false;
+        /* SUCCESS commits the explicit pairing transaction. Any later
+         * bleTimeout belongs to normal link supervision/reconnect and must
+         * not put the keyboard back into the manual pairing window, where
+         * application keepalives are intentionally paused. */
+        s_manual_pairing = false;
         /* RFBound SUCCESS means the binding transaction completed. It does
          * not prove that an application HID frame has reached the receiver. */
         s_state = KBD_RADIO_PAIR_BOUND;
