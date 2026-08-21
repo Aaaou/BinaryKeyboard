@@ -27,13 +27,14 @@ def package(build_dir: Path, stem: str) -> tuple[Path, Path]:
     return full_hex, full_bin
 
 
-def configure_and_build(cmake: Path, build_dir: Path, stage: int) -> None:
+def configure_and_build(cmake: Path, build_dir: Path, stage: int, manual_host: bool = False) -> None:
     firmware_dir = PROJECT_ROOT / "firmware" / "CH592F"
     subprocess.run([
         str(cmake), "-S", str(firmware_dir), "-B", str(build_dir), "-G", "Ninja",
         "-DCMAKE_BUILD_TYPE=MinSizeRel", "-DKBD_RECEIVER_BUILD=ON",
         f"-DKBD_RECEIVER_STARTUP_STAGE={stage}",
         "-DKBD_RECEIVER_USB_DIAGNOSTIC=OFF",
+        f"-DKBD_RECEIVER_MANUAL_HOST_DIAGNOSTIC={'ON' if manual_host else 'OFF'}",
     ], check=True)
     subprocess.run([str(cmake), "--build", str(build_dir)], check=True)
 
@@ -48,10 +49,12 @@ def main() -> int:
     diagnostic_dir = firmware_dir / "build" / "receiver-usb-diagnostic"
     time_dir = firmware_dir / "build" / "receiver-time-diagnostic"
     rf_library_dir = firmware_dir / "build" / "receiver-rf-library-diagnostic"
+    manual_host_dir = firmware_dir / "build" / "receiver-manual-host-diagnostic"
     configure_and_build(cmake, receiver_dir, 3)
     configure_and_build(cmake, diagnostic_dir, 0)
     configure_and_build(cmake, time_dir, 1)
     configure_and_build(cmake, rf_library_dir, 2)
+    configure_and_build(cmake, manual_host_dir, 3, manual_host=True)
 
     jumpiap_build()
     bootloader_build()
@@ -64,6 +67,9 @@ def main() -> int:
     rf_library_hex, rf_library_bin = package(
         rf_library_dir, "CH592F-RECEIVER-RF-LIBRARY-DIAGNOSTIC"
     )
+    manual_host_hex, manual_host_bin = package(
+        manual_host_dir, "CH592F-RECEIVER-MANUAL-HOST-DIAGNOSTIC"
+    )
     print(f"Receiver FULL HEX (ISP): {full_hex}")
     print(f"Receiver FULL BIN (ISP): {full_bin}")
     print(f"Receiver USB diagnostic FULL HEX (ISP): {diagnostic_hex}")
@@ -72,6 +78,8 @@ def main() -> int:
     print(f"Receiver time diagnostic FULL BIN (ISP): {time_bin}")
     print(f"Receiver RF library diagnostic FULL HEX (ISP): {rf_library_hex}")
     print(f"Receiver RF library diagnostic FULL BIN (ISP): {rf_library_bin}")
+    print(f"Receiver manual Host diagnostic FULL HEX (ISP): {manual_host_hex}")
+    print(f"Receiver manual Host diagnostic FULL BIN (ISP): {manual_host_bin}")
     return 0
 
 

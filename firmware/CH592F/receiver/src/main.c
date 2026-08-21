@@ -40,11 +40,13 @@ int main(void)
     Receiver_Radio_RfLibraryInit();
     Receiver_Log_Event(RX_LOG_RF_LIB_INIT_OK, KBD_RECEIVER_STARTUP_STAGE, 0u);
     Receiver_Log_SetCompletedStage(2u);
+#if !defined(KBD_RECEIVER_MANUAL_HOST_DIAGNOSTIC)
     Receiver_Log_Event(RX_LOG_HOST_INIT_BEGIN, KBD_RECEIVER_STARTUP_STAGE, 0u);
     int radio_result = Receiver_Radio_Init();
     Receiver_Log_Event(radio_result == 0 ? RX_LOG_HOST_INIT_OK : RX_LOG_HOST_INIT_FAIL,
                        KBD_RECEIVER_STARTUP_STAGE, (uint8_t)radio_result);
     if (radio_result == 0) Receiver_Log_SetCompletedStage(3u);
+#endif
 #endif
     while (1) {
 #if KBD_RECEIVER_STARTUP_STAGE >= 2

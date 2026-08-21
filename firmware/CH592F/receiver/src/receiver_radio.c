@@ -80,6 +80,7 @@ static rfRoleList_t s_speed_item;
 static rfRoleSpeed_t s_speed_list = {1, &s_speed_item};
 static volatile uint8_t s_host_startup_state;
 static volatile uint8_t s_host_startup_result;
+static bool s_host_active;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static bool valid_poll_rate(uint16_t rate)
@@ -218,7 +219,18 @@ static int start_host(bool pairing)
         return -1;
     }
     s_host_startup_state = 2u;
+    s_host_active = true;
     return 0;
+}
+
+/* RFRole_Shut is only valid after RFBound_StartHost succeeded.  In the
+ * manual-start diagnostic build, the first pairing request has no role to
+ * stop yet. */
+static void stop_host(void)
+{
+    if (!s_host_active) return;
+    RFRole_Shut();
+    s_host_active = false;
 }
 
 static void keyboard_enqueue(const USB_KeyboardReport_t *report)
@@ -391,15 +403,15 @@ static void process_control(void)
 
     if (control == RX_CONTROL_PAIR_START) {
         s_release_pending = true;
-        RFRole_Shut();
+        stop_host();
         result = start_host(true);
     } else if (control == RX_CONTROL_PAIR_CANCEL) {
-        RFRole_Shut();
+        stop_host();
         if (has_peer()) result = start_host(false);
         else s_state = KBD_RADIO_PAIR_UNBOUND;
     } else if (control == RX_CONTROL_PAIR_CLEAR) {
         s_release_pending = true;
-        RFRole_Shut();
+        stop_host();
         uint8_t old_peer[6];
         uint8_t old_device_id = s_nv.device_id;
         memcpy(old_peer, s_nv.peer, sizeof(old_peer));
@@ -455,6 +467,7 @@ void Receiver_Radio_RfLibraryInit(void)
     s_last_usb_report = RTC_GetCycle32k();
     s_host_startup_state = 0u;
     s_host_startup_result = 0u;
+    s_host_active = false;
     RF_LibInit(irq_cb);
 }
 
@@ -478,7 +491,7 @@ void Receiver_Radio_Process(void)
     if (s_state == KBD_RADIO_PAIRING && rtc_elapsed(now, s_pair_started) >= RX_PAIR_WINDOW_TICKS) {
         s_release_pending = true;
         s_has_sequence = false;
-        RFRole_Shut();
+        stop_host();
         if (has_peer()) start_host(false);
         else s_state = KBD_RADIO_PAIR_UNBOUND;
     }
