@@ -12,6 +12,7 @@
 
 /* 键盘核心模块 */
 #include "kbd_mode.h"
+#include "kbd_radio_2g4.h"
 #include "kbd_core.h"
 #include "kbd_macro.h"
 #include "kbd_storage.h"
@@ -76,6 +77,9 @@ int main(void)
     /* BLE 库初始化（提供 TMOS 调度器，USB/BLE 模式都需要） */
 #if KBD_RADIO_2G4_ENABLED
     HAL_TimeInit();
+    /* TMOS must be initialized before RGB, storage, battery and RF modules
+     * register tasks.  RF mode has no BLE scheduler to do this for us. */
+    KBD_Radio2G4_TmosInit();
 #else
     CH59x_BLEInit();
 #endif

@@ -47,13 +47,13 @@ static void kbd_tmos_disable_irq(void)
     PFIC_DisableIRQ(RTC_IRQn);
 }
 
-static void kbd_tmos_init(void)
+void KBD_Radio2G4_TmosInit(void)
 {
     tmosConfig_t config;
     memset(&config, 0, sizeof(config));
     config.MEMAddr = (uint32_t)s_tmos_memory;
     config.MEMLen = sizeof(s_tmos_memory);
-    config.TaskMaxCount = 8u;
+    config.TaskMaxCount = 16u;
     config.enableTmosIrq = kbd_tmos_enable_irq;
     config.disableTmosIrq = kbd_tmos_disable_irq;
     TMOS_Init(&config);
@@ -164,7 +164,6 @@ int KBD_Radio2G4_Init(void)
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
     KBD_RGB_Flash(0, 0, 180, 1500);
-    kbd_tmos_init();
     RF_LibInit(rf_irq_cb);
     s_initialized = true;
     return rf_start();

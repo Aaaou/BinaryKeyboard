@@ -7,6 +7,7 @@ extern "C" {
 #endif
 typedef enum { KBD_RADIO_PAIR_UNBOUND = 0, KBD_RADIO_PAIRING = 1, KBD_RADIO_PAIR_BOUND = 2, KBD_RADIO_PAIR_CONNECTED = 3, KBD_RADIO_PAIR_INCONSISTENT = 4, KBD_RADIO_PAIR_UNSUPPORTED = 5 } kbd_radio_pair_state_t;
 bool KBD_Radio2G4_IsEnabled(void);
+void KBD_Radio2G4_TmosInit(void);
 int KBD_Radio2G4_Init(void);
 void KBD_Radio2G4_Stop(void);
 int KBD_Radio2G4_StartPairing(void);
