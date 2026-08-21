@@ -672,6 +672,16 @@ void KBD_RGB_Process(void)
 {
     kbd_rgb_config_t *cfg = KBD_GetRgbConfig();
 
+    /* Pairing owns the visible indicator: suppress all key pixels so a
+     * pairing animation can never look like two status LEDs are active. */
+    if (s_current_state == KBD_STATE_2G4_PAIRING)
+    {
+        WS2812_FillKeys(0, 0, 0);
+        ProcessIndicatorMode();
+        WS2812_Update();
+        return;
+    }
+
     if (cfg->press_effect == PRESS_EFFECT_NONE && s_press_active_count > 0)
     {
         ClearPressEffects();

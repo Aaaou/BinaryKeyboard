@@ -514,18 +514,19 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     const d = this.expectOk(resp, 'RADIO_PAIR_STATUS');
     const states: PairStatus['state'][] = ['unbound', 'pairing', 'bound', 'connected', 'inconsistent', 'unsupported'];
     const state = states[resp.getUint8(d + 1)] ?? 'unsupported';
-    const role = resp.byteLength > d + 2 && resp.getUint8(d + 2) === 1 ? 'receiver' : 'keyboard';
-    const deviceId = resp.byteLength > d + 3 ? resp.getUint8(d + 3) : resp.getUint32(d + 3, true);
-    if (resp.byteLength < d + 25) {
+    const payloadLength = resp.getUint8(2);
+    const role = payloadLength >= 3 && resp.getUint8(d + 2) === 1 ? 'receiver' : 'keyboard';
+    const deviceId = payloadLength >= 4 ? resp.getUint8(d + 3) : resp.getUint32(d + 3, true);
+    if (payloadLength < 25) {
       return { state, session: resp.getUint8(d + 2), deviceId };
     }
     const hex = (offset: number, length: number) => Array.from({ length }, (_, i) => resp.getUint8(d + offset + i).toString(16).padStart(2, '0')).join(':');
     const fp = resp.getUint32(d + 17, true);
-    const generation = resp.byteLength >= d + 25 ? resp.getUint32(d + 21, true) : 0;
-    const lastAge = resp.byteLength >= d + 29 ? resp.getUint32(d + 25, true) : 0xffffffff;
+    const generation = payloadLength >= 25 ? resp.getUint32(d + 21, true) : 0;
+    const lastAge = payloadLength >= 29 ? resp.getUint32(d + 25, true) : 0xffffffff;
     return {
       state,
-      session: resp.byteLength >= d + 25 ? resp.getUint32(d + 21, true) : 0,
+      session: payloadLength >= 25 ? resp.getUint32(d + 21, true) : 0,
       deviceId,
       role,
       peerDeviceId: resp.getUint8(d + 4),

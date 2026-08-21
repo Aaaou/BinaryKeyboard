@@ -294,6 +294,14 @@ if(KBD_RECEIVER_BUILD)
     if(KBD_RECEIVER_EARLY_COMMAND_ACK)
         list(APPEND CH592_COMPILE_DEFINITIONS KBD_RECEIVER_EARLY_COMMAND_ACK=1)
     endif()
+elseif(KBD_RADIO_2G4_ENABLED)
+    # Keep the RF keyboard's USB identity and interrupt descriptors identical
+    # to the normal keyboard build.  The receiver is the only RF target with
+    # a distinct PID and 1 ms polling interval.
+    list(APPEND CH592_COMPILE_DEFINITIONS
+        KBD_USB_INPUT_INTERVAL=0x0A
+        USB_PID=0x2107
+    )
 endif()
 
 if(KBD_SLEEP_TEST_MODE)
