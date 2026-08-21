@@ -47,3 +47,19 @@ describe('CH592 seamless wake RGB protocol extension', () => {
     expect(createDefaultRgbConfig().seamlessWakeEnabled).toBe(true);
   });
 });
+
+describe('CH592 receiver system status', () => {
+  it('decodes the startup stage from SYS_STATUS before SYS_INFO is read', () => {
+    const codec = new Ch592Codec();
+    const bytes = new Uint8Array(64);
+    // Command, sub, payload length, OK, work mode, link state, layer,
+    // battery, charging, receiver startup stage, reserved, reserved.
+    bytes.set([0x02, 0x00, 0x09, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]);
+
+    const status = codec.parseSysStatus(new DataView(bytes.buffer));
+
+    expect(status.workMode).toBe(2);
+    expect(status.receiverStartupStage).toBe(1);
+    expect(status.adcRaw).toBeUndefined();
+  });
+});

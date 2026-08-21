@@ -40,20 +40,22 @@ void Receiver_Log_MarkHostSeen(void)
     s_host_seen = 1u;
 }
 
-void Receiver_Log_Flush(void)
+uint8_t Receiver_Log_Pop(uint8_t *event, uint8_t *stage, uint8_t *result)
 {
-    uint8_t payload[5];
     receiver_log_entry_t entry;
 
-    if (!s_host_seen || s_head == s_tail) return;
+    if (s_head == s_tail) return 0u;
     entry = s_queue[s_tail];
-
-    /* [SUB=system][LEN=3][event][startup stage][operation result]. */
-    payload[0] = KBD_LOG_SYSTEM_EVENT;
-    payload[1] = 3u;
-    payload[2] = entry.event;
-    payload[3] = entry.stage;
-    payload[4] = entry.result;
-    USB_Config_SendResponse(KBD_CMD_LOG, payload, sizeof(payload));
     s_tail = (uint8_t)((s_tail + 1u) & RX_LOG_QUEUE_MASK);
+    *event = entry.event;
+    *stage = entry.stage;
+    *result = entry.result;
+    return 1u;
+}
+
+void Receiver_Log_Flush(void)
+{
+    /* Boot records are intentionally pulled with LOG_GET. Pushing them here
+     * races a browser's command response and may consume the only evidence
+     * before its terminal has subscribed. */
 }

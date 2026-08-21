@@ -27,7 +27,7 @@ import {
 } from '@/types/protocol';
 import { FIRMWARE_VERSION_META } from '@/generated/versionConfig';
 import { parseLogFrame, parseReceiveFrame, parseSendFrame } from '@/utils/protocolParser';
-import type { BatteryInfo, HidOptionalOperations, RadioCapabilities, PairStatus } from '../../common/types';
+import type { BatteryInfo, HidOptionalOperations, RadioCapabilities, PairStatus, ReceiverBootLogEntry } from '../../common/types';
 import type {
   CodecInboundPacket,
   CodecTransport,
@@ -87,6 +87,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       resetConfig: () => this.runOkCommand(transport, Command.CFG_RESET, 'CFG_RESET'),
       getBattery: () => this.getBattery(transport),
       getLogConfig: () => this.getLogConfig(transport),
+      getReceiverBootLog: () => this.getReceiverBootLog(transport),
       setLogConfig: (config) => this.setLogConfig(transport, config),
       getMacroOverview: () => this.getMacroOverview(transport),
       getMacroInfo: (slot) => this.getMacroInfo(transport, slot),
@@ -229,7 +230,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       isCharging: resp.getUint8(d + 5) !== 0,
     };
 
-    if (this.capabilities.receiverRole && resp.getUint8(2) >= 9) {
+    // SYS_STATUS must be self-describing.  During connection the status poll
+    // can happen before SYS_INFO has set receiverRole, so do not make this
+    // wire-format decision depend on cached capabilities.
+    if (status.workMode === 2 && resp.getUint8(2) >= 9) {
       status.receiverStartupStage = resp.getUint8(d + 6);
     } else if (resp.getUint8(2) >= 9) {
       status.adcRaw = resp.getUint16(d + 6, true);
@@ -525,6 +529,19 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   private async getLogConfig(transport: CodecTransport<DataView>): Promise<LogConfig> {
     const resp = await this.sendCommand(transport, Command.LOG_GET);
     return this.parseLogConfig(resp);
+  }
+
+  private async getReceiverBootLog(transport: CodecTransport<DataView>): Promise<ReceiverBootLogEntry | null> {
+    if (!this.capabilities.receiverRole) return null;
+    const resp = await this.sendCommand(transport, Command.LOG_GET);
+    const d = this.expectOk(resp, 'LOG_GET');
+    if (resp.getUint8(2) < 2 || resp.getUint8(d + 1) === 0) return null;
+    if (resp.getUint8(2) < 5) throw new Error('LOG_GET 接收器响应长度错误');
+    return {
+      event: resp.getUint8(d + 2),
+      stage: resp.getUint8(d + 3),
+      result: resp.getUint8(d + 4),
+    };
   }
 
   private async setLogConfig(transport: CodecTransport<DataView>, config: LogConfig): Promise<void> {

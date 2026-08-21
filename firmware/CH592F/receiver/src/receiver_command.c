@@ -54,6 +54,12 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[2]=(Receiver_Radio_GetState()==KBD_RADIO_PAIR_CONNECTED) ? KBD_CONN_CONNECTED : KBD_CONN_DISCONNECTED;
         resp[6]=KBD_RECEIVER_STARTUP_STAGE;
         len=9; break;
+    case KBD_CMD_LOG_GET:
+        /* Receiver-only: read one retained boot diagnostic.
+         * [OK][has entry][event][stage][result].  Empty is still OK. */
+        resp[1] = Receiver_Log_Pop(&resp[2], &resp[3], &resp[4]);
+        len = resp[1] ? 5 : 2;
+        break;
     case KBD_CMD_RADIO_CAPS:
         resp[1]=(KBD_RECEIVER_STARTUP_STAGE >= 3) ? 1 : 0;
         resp[2]=1; resp[3]=4;

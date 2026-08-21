@@ -155,12 +155,13 @@ const connectionIcon = computed(() => {
 
 const receiverStageLabel = computed(() => {
   const stage = deviceStore.deviceStatus?.receiverStartupStage;
+  if (stage === undefined) return '等待状态响应';
   return ({
     0: '阶段 0 · 仅 USB',
     1: '阶段 1 · 时间基准',
     2: '阶段 2 · RF 库',
     3: '阶段 3 · RF Host',
-  } as Record<number, string>)[stage ?? -1] ?? '未知阶段';
+  } as Record<number, string>)[stage] ?? `未知阶段 ${stage}`;
 });
 
 // RGB 状态

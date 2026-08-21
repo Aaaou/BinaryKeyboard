@@ -42,6 +42,8 @@ export interface HidOptionalOperations {
   resetConfig?: () => Promise<void>;
   getBattery?: () => Promise<BatteryInfo>;
   getLogConfig?: () => Promise<LogConfig>;
+  /** Receiver-only retained boot diagnostics. */
+  getReceiverBootLog?: () => Promise<ReceiverBootLogEntry | null>;
   setLogConfig?: (config: LogConfig) => Promise<void>;
   getMacroOverview?: () => Promise<MacroOverview>;
   getMacroInfo?: (slot: number) => Promise<MacroHeader>;
@@ -55,6 +57,12 @@ export interface HidOptionalOperations {
   clearPairing?: (force?: boolean) => Promise<void>;
   getPollRate?: () => Promise<number>;
   setPollRate?: (rate: number) => Promise<void>;
+}
+
+export interface ReceiverBootLogEntry {
+  event: number;
+  stage: number;
+  result: number;
 }
 
 export interface RadioCapabilities {
@@ -83,6 +91,7 @@ export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, stri
   resetConfig: '恢复出厂设置',
   getBattery: '电池状态读取',
   getLogConfig: '日志配置读取',
+  getReceiverBootLog: '读取接收器启动日志',
   setLogConfig: '日志配置写入',
   getMacroOverview: '宏概览读取',
   getMacroInfo: '宏信息读取',

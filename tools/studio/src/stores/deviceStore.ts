@@ -6,6 +6,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { hidService } from "@/services/HidService";
 import { useMacroStore } from "@/stores/macroStore";
+import { useTerminalStore } from "@/stores/terminalStore";
 import {
   type DeviceCapabilities,
   type DeviceInfo,
@@ -296,6 +297,9 @@ export const useDeviceStore = defineStore("device", () => {
 
     try {
       await refreshDeviceInfo();
+      if (capabilities.value.receiverRole) {
+        await readReceiverBootDiagnostics();
+      }
       // A 2.4G receiver uses the CH592 transport but has no keymap of its own.
       // Its paired keyboard remains the place where mappings are configured.
       if (!capabilities.value.receiverRole) {
@@ -353,6 +357,28 @@ export const useDeviceStore = defineStore("device", () => {
   async function refreshDeviceInfo(): Promise<void> {
     deviceInfo.value = await hidService.getSysInfo();
     deviceStatus.value = await hidService.getSysStatus();
+  }
+
+  async function readReceiverBootDiagnostics(): Promise<void> {
+    // LOG_GET is request/response based, so boot diagnostics remain visible
+    // even when the browser subscribed after USB enumeration completed.
+    for (let index = 0; index < 16; index++) {
+      const entry = await hidService.getReceiverBootLog();
+      if (!entry) return;
+      const names: Record<number, string> = {
+        0x80: '接收器启动', 0x81: 'USB 已配置', 0x82: '时间基准初始化开始',
+        0x83: '时间基准初始化完成', 0x84: 'RF 库初始化开始',
+        0x85: 'RF 库初始化完成', 0x86: 'RF Host 初始化开始',
+        0x87: 'RF Host 初始化完成', 0x88: 'RF Host 初始化失败',
+      };
+      useTerminalStore().addEntry({
+        direction: 'device', level: entry.result === 0 ? 'info' : 'error',
+        command: 'LOG_SYSTEM', cmdHex: '70', sub: 7, dataLen: 3,
+        rawHex: `70 07 03 ${entry.event.toString(16).padStart(2, '0')} ${entry.stage.toString(16).padStart(2, '0')} ${entry.result.toString(16).padStart(2, '0')}`.toUpperCase(),
+        parsed: `${names[entry.event] ?? `启动事件 0x${entry.event.toString(16)}`} | 阶段 ${entry.stage}${entry.result === 0 ? '' : ` | 结果 ${entry.result}`}`,
+        category: 'system',
+      });
+    }
   }
 
   /** 刷新按键映射 */
