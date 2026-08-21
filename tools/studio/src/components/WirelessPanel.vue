@@ -82,7 +82,7 @@ const savePollRate = () => run(() => hidService.setPollRate(pollRate.value), `å·
 let refreshTimer: number | undefined;
 onMounted(() => {
   void refresh();
-  refreshTimer = window.setInterval(() => { if (!busy.value) void refresh(); }, 1000);
+  refreshTimer = window.setInterval(() => { if (!busy.value) void refresh(); }, 2000);
 });
 onUnmounted(() => { if (refreshTimer !== undefined) window.clearInterval(refreshTimer); });
 </script>

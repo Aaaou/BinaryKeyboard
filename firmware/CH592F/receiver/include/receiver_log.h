@@ -13,6 +13,12 @@
 #define RX_LOG_HOST_INIT_BEGIN      0x86u
 #define RX_LOG_HOST_INIT_OK         0x87u
 #define RX_LOG_HOST_INIT_FAIL       0x88u
+#define RX_LOG_PAIR_START           0x89u
+#define RX_LOG_PAIR_SUCCESS         0x8Au
+#define RX_LOG_PAIR_TIMEOUT         0x8Bu
+#define RX_LOG_PAIR_FAILURE         0x8Cu
+#define RX_LOG_RF_FRAME_OK           0x8Du
+#define RX_LOG_LINK_LOST            0x8Eu
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);

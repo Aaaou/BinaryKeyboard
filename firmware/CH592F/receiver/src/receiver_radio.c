@@ -215,6 +215,7 @@ static void bound_cb(staBound_t *status)
          * application link is connected only after process_rf_rx() validates
          * an actual keyboard frame from this peer. */
         s_state = KBD_RADIO_PAIR_BOUND;
+        Receiver_Log_Event(RX_LOG_PAIR_SUCCESS, KBD_RECEIVER_STARTUP_STAGE, status->devId);
     } else if (status->status == bleTimeout) {
         s_has_sequence = false;
         /* RFBound reports a transaction timeout while it is re-entering its
@@ -225,11 +226,13 @@ static void bound_cb(staBound_t *status)
             rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
         }
+        Receiver_Log_Event(RX_LOG_PAIR_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
     } else {
         s_has_sequence = false;
         if (s_state != KBD_RADIO_PAIR_CONNECTED) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         }
+        Receiver_Log_Event(RX_LOG_PAIR_FAILURE, KBD_RECEIVER_STARTUP_STAGE, status->status);
     }
 }
 
@@ -365,6 +368,10 @@ static void process_rf_rx(void)
                 } else if (frame->header.type == KBD_RADIO_FRAME_CONSUMER && frame->header.length == 2u) {
                     consumer_enqueue((const USB_ConsumerReport_t *)frame->payload);
                 }
+                if (s_state != KBD_RADIO_PAIR_CONNECTED) {
+                    Receiver_Log_Event(RX_LOG_RF_FRAME_OK, KBD_RECEIVER_STARTUP_STAGE,
+                                       (uint8_t)frame->header.type);
+                }
                 s_state = KBD_RADIO_PAIR_CONNECTED;
             }
         }
@@ -450,6 +457,7 @@ static void process_control(void)
 
     if (control == RX_CONTROL_PAIR_START) {
         s_release_pending = true;
+        Receiver_Log_Event(RX_LOG_PAIR_START, KBD_RECEIVER_STARTUP_STAGE, 0u);
         stop_host();
         result = start_host(true);
     } else if (control == RX_CONTROL_PAIR_CANCEL) {
@@ -554,6 +562,7 @@ void Receiver_Radio_Process(void)
     uint32_t now = RTC_GetCycle32k();
     if (s_state == KBD_RADIO_PAIR_CONNECTED &&
         rtc_elapsed(now, s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
+        Receiver_Log_Event(RX_LOG_LINK_LOST, KBD_RECEIVER_STARTUP_STAGE, 0u);
         s_release_pending = true;
         s_has_sequence = false;
         s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;

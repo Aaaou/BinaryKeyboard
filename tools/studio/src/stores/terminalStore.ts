@@ -127,6 +127,10 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   let nextId = 0;
   const pendingTimestamps = new Map<number, number>();
+  // Status and boot-log reads are background diagnostics. Keep the first
+  // result and only show a later entry when its content changes; pairing
+  // commands and device events remain fully visible.
+  const routineSnapshots = new Map<string, { value: string; timestamp: number }>();
 
   // 计算属性
   const filteredEntries = computed(() => {
@@ -154,6 +158,17 @@ export const useTerminalStore = defineStore('terminal', () => {
   // 方法
   function addEntry(entry: Omit<TerminalEntry, 'id' | 'timestamp' | 'glowColor'> & { glowColor?: string }) {
     const now = Date.now();
+    const cmdCode = parseInt(entry.cmdHex, 16);
+    const routine = cmdCode === 0x02 || cmdCode === 0x71;
+    if (routine && entry.level !== 'error') {
+      const key = `${entry.direction}:${cmdCode}`;
+      const value = `${entry.statusCode ?? ''}|${entry.parsed}|${entry.rawHex}`;
+      const previous = routineSnapshots.get(key);
+      if (previous && previous.value === value && now - previous.timestamp < 10000) {
+        return;
+      }
+      routineSnapshots.set(key, { value, timestamp: now });
+    }
     const group = getCmdGroup(entry.cmdHex, entry.level);
     const glowColor = entry.glowColor
       || (entry.category ? LOG_CATEGORY_COLORS[entry.category] : GLOW_COLORS[group]);
@@ -166,12 +181,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     };
 
     if (entry.direction === 'send') {
-      const cmdCode = parseInt(entry.cmdHex, 16);
       pendingTimestamps.set(cmdCode, now);
     }
 
     if (entry.direction === 'receive') {
-      const cmdCode = parseInt(entry.cmdHex, 16);
       const sendTime = pendingTimestamps.get(cmdCode);
       if (sendTime) {
         fullEntry.duration = now - sendTime;
@@ -189,6 +202,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   function clear() {
     entries.value = [];
     pendingTimestamps.clear();
+    routineSnapshots.clear();
     expandedId.value = -1;
   }
 

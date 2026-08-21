@@ -370,6 +370,8 @@ export const useDeviceStore = defineStore("device", () => {
         0x83: '时间基准初始化完成', 0x84: 'RF 库初始化开始',
         0x85: 'RF 库初始化完成', 0x86: 'RF Host 初始化开始',
         0x87: 'RF Host 初始化完成', 0x88: 'RF Host 初始化失败',
+        0x89: '开始配码', 0x8a: '配码事务成功', 0x8b: 'RF 配码超时',
+        0x8c: 'RF 配码失败', 0x8d: '收到首个有效 RF 帧', 0x8e: '应用链路断开',
       };
       useTerminalStore().addEntry({
         direction: 'device', level: entry.result === 0 ? 'info' : 'error',
@@ -632,6 +634,12 @@ export const useDeviceStore = defineStore("device", () => {
     try {
       const status = await hidService.getSysStatus();
       deviceStatus.value = status;
+      // Drain at most one receiver event per status tick. This keeps the
+      // terminal useful for RF diagnosis without turning LOG_GET into a
+      // visible polling flood.
+      if (capabilities.value.receiverRole) {
+        await readReceiverBootDiagnostics();
+      }
 
       // 注释掉自动同步：让编辑层和当前层独立
       // 用户可以在设备使用层5的同时，在软件上编辑层2
