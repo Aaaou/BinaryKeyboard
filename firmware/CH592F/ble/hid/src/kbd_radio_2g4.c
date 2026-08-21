@@ -163,10 +163,17 @@ int KBD_Radio2G4_Init(void)
     rf_nv_load();
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
-    KBD_RGB_Flash(0, 0, 180, 1500);
     RF_LibInit(rf_irq_cb);
     s_initialized = true;
-    return rf_start();
+    // An unbound keyboard must not enter a short-lived pairing attempt on
+    // every power-up. Wait for the explicit web pairing command instead; a
+    // previously bound keyboard may reconnect automatically.
+    if (rf_has_peer()) {
+        return rf_start();
+    }
+    s_state = KBD_RADIO_PAIR_UNBOUND;
+    KBD_RGB_Flash(0, 0, 180, 400);
+    return 0;
 }
 void KBD_Radio2G4_Stop(void) { if (s_initialized) RFRole_Shut(); s_initialized = false; }
 int KBD_Radio2G4_StartPairing(void)

@@ -11,6 +11,9 @@
         <div class="glow-title">
           <span class="glow-title-icon glow-paw">🐾</span>
           <span>Debug Terminal</span>
+          <span v-if="deviceStore.device" class="glow-device-role">
+            {{ deviceStore.device.productId === 0x2108 ? '接收器' : '键盘' }}
+          </span>
           <span class="glow-cat-emoji"><CatEmoji type="grinning" /></span>
         </div>
 

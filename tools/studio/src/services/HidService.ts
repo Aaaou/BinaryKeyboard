@@ -98,7 +98,10 @@ export class HidService {
     try {
       const devices = await navigator.hid.requestDevice({ filters: KEYBOARD_FILTERS });
       if (devices.length === 0) return null;
-      return this.pickBestDevice(devices);
+      // The chooser result is the user's explicit selection. When multiple
+      // authorized devices are returned, keep the first selected entry rather
+      // than silently ranking the receiver above the keyboard.
+      return devices[0] ?? null;
     } catch (error) {
       showToast('error', '连接失败', error instanceof Error ? error.message : '请求设备时发生未知错误');
       return null;
@@ -109,6 +112,14 @@ export class HidService {
     if (!HidService.isSupported()) return null;
     const devices = await navigator.hid.getDevices();
     return this.pickBestDevice(devices);
+  }
+
+  async getAuthorizedDevices(): Promise<HIDDevice[]> {
+    if (!HidService.isSupported()) return [];
+    const devices = await navigator.hid.getDevices();
+    return devices.filter((device) =>
+      ADAPTERS.some((adapter) => adapter.matches(device) && scoreDeviceForAdapter(device, adapter) > 0),
+    );
   }
 
   private pickBestDevice(devices: HIDDevice[]): HIDDevice | null {
@@ -123,7 +134,11 @@ export class HidService {
           ),
         }))
         .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score)[0]?.device ?? null
+        .sort((a, b) => {
+          const aKeyboard = a.device.productId === 0x2107 ? 1 : 0;
+          const bKeyboard = b.device.productId === 0x2107 ? 1 : 0;
+          return bKeyboard - aKeyboard || b.score - a.score;
+        })[0]?.device ?? null
     );
   }
 

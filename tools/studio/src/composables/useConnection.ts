@@ -119,9 +119,10 @@ export function useConnection() {
       if (!requestedDevice) return;
 
       viewPhase.value = "connecting";
-      // 手动连接只负责授权，真正连接流程与自动重连保持完全一致。
+      // WebHID chooser already returned the user's explicit selection. Do not
+      // replace it with the first authorized device (often the receiver).
       await new Promise((r) => setTimeout(r, 800));
-      await connectAuthorizedDevice("连接成功");
+      await connectAndInitialize(requestedDevice, "连接成功");
     } catch (error) {
       showToast(
         "error",
@@ -190,7 +191,8 @@ export function useConnection() {
   }
 
   function deviceLabel(device: HIDDevice): string {
-    return device.productName;
+    const role = device.productId === 0x2108 ? '接收器' : '键盘';
+    return `${role}${device.productName ? ` (${device.productName})` : ''}`;
   }
 
   function setupHidListeners() {
