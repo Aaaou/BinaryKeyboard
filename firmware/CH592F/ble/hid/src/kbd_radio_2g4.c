@@ -15,8 +15,7 @@
 #define KBD_RF_KEYBOARD_ID 0u
 /* Keep the application heartbeat comfortably below the RFBound transaction
  * timeout.  A 1 s interval was longer than the old 500 ms library window. */
-#define KBD_RF_IDLE_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
-#define KBD_RF_ACTIVE_REPORT_TICKS 655u  /* about 20 ms while HID is held */
+#define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
 typedef struct __attribute__((packed)) {
@@ -33,12 +32,7 @@ static uint8_t s_local_id[6], s_peer_id[6], s_device_id = KBD_RF_KEYBOARD_ID;
 static __attribute__((aligned(4))) uint8_t s_tmos_memory[1024];
 static uint32_t s_session;
 static uint32_t s_sequence;
-static uint32_t s_last_heartbeat;
-static uint8_t s_keyboard_report[8];
-static bool s_keyboard_report_valid;
-static bool s_keyboard_report_active;
-static uint8_t s_mouse_buttons;
-static uint16_t s_consumer_key;
+static uint32_t s_last_keepalive;
 static bool s_initialized;
 /* Pairing is transactional: keep the previous profile until the new
  * RFBound transaction has completed successfully.  This mirrors the
@@ -98,21 +92,6 @@ static bool rf_has_peer(void)
     return false;
 }
 
-static void rf_clear_cached_input(void)
-{
-    memset(s_keyboard_report, 0, sizeof(s_keyboard_report));
-    s_keyboard_report_valid = true;
-    s_keyboard_report_active = false;
-    s_mouse_buttons = 0u;
-    s_consumer_key = 0u;
-}
-
-static bool rf_hid_active(void)
-{
-    return s_keyboard_report_active || s_mouse_buttons != 0u ||
-           s_consumer_key != 0u;
-}
-
 static void rf_nv_load(void)
 {
     kbd_rf_nv_t nv;
@@ -159,10 +138,9 @@ static void rf_bound_cb(staBound_t *status)
          * supervision window. Queue a keepalive on the next main-loop turn
          * instead of waiting for a full heartbeat interval after SUCCESS. */
         uint32_t now = RTC_GetCycle32k();
-        uint32_t interval = rf_hid_active()
-            ? KBD_RF_ACTIVE_REPORT_TICKS : KBD_RF_IDLE_KEEPALIVE_TICKS;
-        s_last_heartbeat = now >= interval
-            ? now - interval : RTC_MAX_COUNT - (interval - now);
+        s_last_keepalive = now >= KBD_RF_KEEPALIVE_TICKS
+            ? now - KBD_RF_KEEPALIVE_TICKS
+            : RTC_MAX_COUNT - (KBD_RF_KEEPALIVE_TICKS - now);
         /* Match WCH's reference device state machine: application traffic is
          * allowed only after RFBound reports SUCCESS. BOUND means a saved
          * peer exists but the RF session is not ready yet. */
@@ -211,8 +189,6 @@ static int rf_start(bool pairing)
     memcpy(bound.OwnInfo, s_local_id, sizeof(s_local_id));
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
-    /* A new RF session must never replay a key held by the previous session. */
-    rf_clear_cached_input();
     s_manual_pairing = pairing;
     s_tx_recovery_pending = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
@@ -244,7 +220,6 @@ static int rf_send(const uint8_t *data, uint8_t len)
     pDMATxGet = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
     s_tx_enqueued++;
     s_last_tx = RTC_GetCycle32k();
-    s_last_heartbeat = s_last_tx;
     SYS_RecoverIrq(irq);
     /* DMA acceptance is not peer acknowledgement. The keyboard remains
      * BOUND; only the receiver can claim an application-confirmed link. */
@@ -260,7 +235,7 @@ int KBD_Radio2G4_Init(void)
                 ((uint32_t)s_local_id[3] << 16) ^
                 ((uint32_t)s_local_id[4] << 8) ^ s_local_id[5];
     if (s_session == 0u) s_session = 1u;
-    s_last_heartbeat = RTC_GetCycle32k();
+    s_last_keepalive = RTC_GetCycle32k();
     rf_nv_load();
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
@@ -361,9 +336,6 @@ int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return -1;
     if (count > 6) count = 6;
     if (keys && count) memcpy(&report[2], keys, count);
-    memcpy(s_keyboard_report, report, sizeof(report));
-    s_keyboard_report_valid = true;
-    s_keyboard_report_active = modifier != 0u || count != 0u;
     kbd_radio_frame_t frame;
     uint16_t len = KBD_RadioProtocol_Encode(&frame, KBD_RADIO_FRAME_KEYBOARD,
                                             s_session, ++s_sequence, report, sizeof(report));
@@ -379,13 +351,11 @@ static int rf_send_frame(uint8_t type, const uint8_t *payload, uint8_t payload_l
 int KBD_Radio2G4_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel)
 {
     uint8_t report[4] = { buttons, (uint8_t)x, (uint8_t)y, (uint8_t)wheel };
-    s_mouse_buttons = buttons;
     return rf_send_frame(KBD_RADIO_FRAME_MOUSE, report, sizeof(report));
 }
 int KBD_Radio2G4_SendConsumerReport(uint16_t key)
 {
     uint8_t report[2] = { (uint8_t)key, (uint8_t)(key >> 8) };
-    s_consumer_key = key;
     return rf_send_frame(KBD_RADIO_FRAME_CONSUMER, report, sizeof(report));
 }
 void KBD_Radio2G4_Process(void)
@@ -429,29 +399,12 @@ void KBD_Radio2G4_Process(void)
      * keepalive data until RFBound SUCCESS changes BOUND to CONNECTED. */
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
     uint32_t now = RTC_GetCycle32k();
-    uint32_t interval = rf_hid_active()
-        ? KBD_RF_ACTIVE_REPORT_TICKS : KBD_RF_IDLE_KEEPALIVE_TICKS;
-    if (rf_rtc_elapsed(now, s_last_heartbeat) < interval) return;
+    if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
     /* rf_send() uses WCH's one-reserved-descriptor rule. Do not add a second,
      * arbitrary occupancy threshold here: a normally pipelined connection
      * must still be able to send heartbeats while a key remains held. */
-    int result;
-    if (s_keyboard_report_active && s_keyboard_report_valid) {
-        result = rf_send_frame(KBD_RADIO_FRAME_KEYBOARD,
-                               s_keyboard_report, sizeof(s_keyboard_report));
-    } else if (s_mouse_buttons != 0u) {
-        uint8_t report[4] = { s_mouse_buttons, 0u, 0u, 0u };
-        result = rf_send_frame(KBD_RADIO_FRAME_MOUSE, report, sizeof(report));
-    } else if (s_consumer_key != 0u) {
-        uint8_t report[2] = { (uint8_t)s_consumer_key,
-                              (uint8_t)(s_consumer_key >> 8) };
-        result = rf_send_frame(KBD_RADIO_FRAME_CONSUMER,
-                               report, sizeof(report));
-    } else {
-        result = rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u);
-    }
-    if (result == 0) {
-        s_last_heartbeat = now;
+    if (rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
+        s_last_keepalive = now;
     }
 }
 
