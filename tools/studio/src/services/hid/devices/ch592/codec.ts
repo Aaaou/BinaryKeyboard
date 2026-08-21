@@ -513,7 +513,28 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     const resp = await this.sendCommand(transport, Command.RADIO_PAIR_STATUS);
     const d = this.expectOk(resp, 'RADIO_PAIR_STATUS');
     const states: PairStatus['state'][] = ['unbound', 'pairing', 'bound', 'connected', 'inconsistent', 'unsupported'];
-    return { state: states[resp.getUint8(d + 1)] ?? 'unsupported', session: resp.getUint8(d + 2), deviceId: resp.getUint32(d + 3, true) };
+    const state = states[resp.getUint8(d + 1)] ?? 'unsupported';
+    const role = resp.byteLength > d + 2 && resp.getUint8(d + 2) === 1 ? 'receiver' : 'keyboard';
+    const deviceId = resp.byteLength > d + 3 ? resp.getUint8(d + 3) : resp.getUint32(d + 3, true);
+    if (resp.byteLength < d + 25) {
+      return { state, session: resp.getUint8(d + 2), deviceId };
+    }
+    const hex = (offset: number, length: number) => Array.from({ length }, (_, i) => resp.getUint8(d + offset + i).toString(16).padStart(2, '0')).join(':');
+    const fp = resp.getUint32(d + 17, true);
+    const generation = resp.byteLength >= d + 25 ? resp.getUint32(d + 21, true) : 0;
+    const lastAge = resp.byteLength >= d + 29 ? resp.getUint32(d + 25, true) : 0xffffffff;
+    return {
+      state,
+      session: resp.byteLength >= d + 25 ? resp.getUint32(d + 21, true) : 0,
+      deviceId,
+      role,
+      peerDeviceId: resp.getUint8(d + 4),
+      localId: hex(5, 6),
+      peerId: hex(11, 6),
+      fingerprint: fp ? fp.toString(16).padStart(8, '0').match(/../g)!.join('-').toUpperCase() : '未绑定',
+      generation,
+      lastValidAgeMs: lastAge === 0xffffffff ? null : Math.round(lastAge * 1000 / 32768),
+    };
   }
 
   private async getPollRate(transport: CodecTransport<DataView>): Promise<number> {

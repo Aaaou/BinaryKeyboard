@@ -571,6 +571,24 @@ int Receiver_Radio_ClearPairing(void) { return request_control(RX_CONTROL_PAIR_C
 kbd_radio_pair_state_t Receiver_Radio_GetState(void) { return s_state; }
 uint8_t Receiver_Radio_GetPeerDeviceId(void) { return has_peer() ? s_nv.device_id : RF_ROLE_ID_INVALD; }
 bool Receiver_Radio_HasPeer(void) { return has_peer(); }
+uint8_t Receiver_Radio_GetDeviceId(void) { return 0; }
+void Receiver_Radio_GetLocalId(uint8_t out[6]) { if (out) memcpy(out, s_local, 6); }
+void Receiver_Radio_GetPeerId(uint8_t out[6]) { if (out) memcpy(out, s_nv.peer, 6); }
+uint32_t Receiver_Radio_GetPairFingerprint(void)
+{
+    uint32_t h = 2166136261u;
+    /* Canonical order is keyboard ID then receiver ID, matching the
+     * keyboard-side fingerprint calculation. */
+    for (uint8_t i = 0; i < 6; i++) { h ^= s_nv.peer[i]; h *= 16777619u; }
+    for (uint8_t i = 0; i < 6; i++) { h ^= s_local[i]; h *= 16777619u; }
+    h ^= s_nv.device_id; h *= 16777619u;
+    return has_peer() ? h : 0u;
+}
+uint32_t Receiver_Radio_GetPairGeneration(void) { return s_nv.generation; }
+uint32_t Receiver_Radio_GetLastValidAge(void)
+{
+    return s_last_valid_rx ? rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) : 0xFFFFFFFFu;
+}
 uint16_t Receiver_Radio_GetPollRate(void) { return s_nv.poll_rate; }
 int Receiver_Radio_SetPollRate(uint16_t rate)
 {

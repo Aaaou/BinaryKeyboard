@@ -77,6 +77,13 @@ export interface PairStatus {
   state: PairState;
   session: number;
   deviceId: number;
+  role?: 'keyboard' | 'receiver';
+  peerDeviceId?: number;
+  localId?: string;
+  peerId?: string;
+  fingerprint?: string;
+  generation?: number;
+  lastValidAgeMs?: number | null;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {

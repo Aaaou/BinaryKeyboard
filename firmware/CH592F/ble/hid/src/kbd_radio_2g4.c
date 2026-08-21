@@ -260,6 +260,19 @@ int KBD_Radio2G4_ClearPairing(bool force)
     return 0;
 }
 kbd_radio_pair_state_t KBD_Radio2G4_GetPairState(void) { return s_state; }
+uint8_t KBD_Radio2G4_GetDeviceId(void) { return s_device_id; }
+bool KBD_Radio2G4_HasPeer(void) { return rf_has_peer(); }
+void KBD_Radio2G4_GetLocalId(uint8_t out[6]) { if (out) memcpy(out, s_local_id, 6); }
+void KBD_Radio2G4_GetPeerId(uint8_t out[6]) { if (out) memcpy(out, s_peer_id, 6); }
+uint32_t KBD_Radio2G4_GetPairFingerprint(void)
+{
+    uint32_t h = 2166136261u;
+    for (uint8_t i = 0; i < 6; i++) { h ^= s_local_id[i]; h *= 16777619u; }
+    for (uint8_t i = 0; i < 6; i++) { h ^= s_peer_id[i]; h *= 16777619u; }
+    h ^= s_device_id; h *= 16777619u;
+    return rf_has_peer() ? h : 0u;
+}
+uint32_t KBD_Radio2G4_GetSession(void) { return s_session; }
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count)
 {
     uint8_t report[8] = { modifier, 0, 0, 0, 0, 0, 0, 0 };
@@ -333,4 +346,10 @@ int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8
 int KBD_Radio2G4_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel) { (void)buttons; (void)x; (void)y; (void)wheel; return -1; }
 int KBD_Radio2G4_SendConsumerReport(uint16_t key) { (void)key; return -1; }
 void KBD_Radio2G4_Process(void) {}
+uint8_t KBD_Radio2G4_GetDeviceId(void) { return 0; }
+bool KBD_Radio2G4_HasPeer(void) { return false; }
+void KBD_Radio2G4_GetLocalId(uint8_t out[6]) { if (out) memset(out, 0, 6); }
+void KBD_Radio2G4_GetPeerId(uint8_t out[6]) { if (out) memset(out, 0, 6); }
+uint32_t KBD_Radio2G4_GetPairFingerprint(void) { return 0; }
+uint32_t KBD_Radio2G4_GetSession(void) { return 0; }
 #endif

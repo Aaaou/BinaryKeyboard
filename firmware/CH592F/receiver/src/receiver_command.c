@@ -29,7 +29,7 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data, uin
 }
 int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 {
-    uint8_t resp[18] = { KBD_RESP_OK };
+    uint8_t resp[32] = { KBD_RESP_OK };
     int ret = 0; uint8_t len = 1;
     Receiver_Log_MarkHostSeen();
     if (s_deferred_response &&
@@ -69,10 +69,26 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[4]=125; resp[5]=0; resp[6]=250; resp[7]=0;
         resp[8]=244; resp[9]=1; resp[10]=232; resp[11]=3; len=12; break;
     case KBD_CMD_RADIO_PAIR_STATUS:
-        /* [OK][state][session/reserved][peer device id][reserved x4]. */
+        /* [OK][state][role][device id][peer id][local 6][peer 6]
+         * [fingerprint 4][generation 4][last valid age 4]. */
         resp[1]=(uint8_t)Receiver_Radio_GetState();
-        resp[3]=Receiver_Radio_GetPeerDeviceId();
-        len=8; break;
+        resp[2]=1;
+        resp[3]=Receiver_Radio_GetDeviceId();
+        resp[4]=Receiver_Radio_GetPeerDeviceId();
+        Receiver_Radio_GetLocalId(&resp[5]);
+        Receiver_Radio_GetPeerId(&resp[11]);
+        {
+            uint32_t v = Receiver_Radio_GetPairFingerprint();
+            resp[17]=(uint8_t)v; resp[18]=(uint8_t)(v>>8);
+            resp[19]=(uint8_t)(v>>16); resp[20]=(uint8_t)(v>>24);
+            v = Receiver_Radio_GetPairGeneration();
+            resp[21]=(uint8_t)v; resp[22]=(uint8_t)(v>>8);
+            resp[23]=(uint8_t)(v>>16); resp[24]=(uint8_t)(v>>24);
+            v = Receiver_Radio_GetLastValidAge();
+            resp[25]=(uint8_t)v; resp[26]=(uint8_t)(v>>8);
+            resp[27]=(uint8_t)(v>>16); resp[28]=(uint8_t)(v>>24);
+        }
+        len=29; break;
     case KBD_CMD_RADIO_PAIR_START:
     case KBD_CMD_RADIO_PAIR_CANCEL:
     case KBD_CMD_RADIO_PAIR_CLEAR:

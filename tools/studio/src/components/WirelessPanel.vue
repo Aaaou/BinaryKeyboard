@@ -4,6 +4,13 @@
     <p class="hint">仅 RF-enabled 键盘固件或 CH592F 接收器显示。</p>
     <div class="status-row"><span>配码状态</span><strong>{{ pairLabel }}</strong></div>
     <div class="status-row"><span>设备角色</span><strong>{{ roleLabel }}</strong></div>
+    <div v-if="status.fingerprint" class="identity-block">
+      <div><span>本机 ID</span><code>{{ status.localId || '未知' }}</code></div>
+      <div><span>对端 ID</span><code>{{ status.peerId || '未绑定' }}</code></div>
+      <div><span>配对指纹</span><code>{{ status.fingerprint }}</code></div>
+      <div><span>绑定代次/会话</span><code>{{ status.generation ?? status.session ?? '-' }}</code></div>
+      <div><span>最近有效帧</span><code>{{ lastFrameLabel }}</code></div>
+    </div>
     <div class="actions">
       <button type="button" :disabled="busy" @click="start">开始配码</button>
       <button type="button" :disabled="busy" @click="cancel">取消配码</button>
@@ -32,6 +39,7 @@ const pollRate = ref(1000);
 const pollRates = computed(() => caps.value.pollRates.length ? caps.value.pollRates : [125, 250, 500, 1000]);
 const pairLabel = computed(() => ({ unbound: '未绑定', pairing: '配码中', bound: '已绑定', connected: '已连接', inconsistent: '两端绑定不一致', unsupported: '未启用' }[status.value.state]));
 const roleLabel = computed(() => caps.value.role === 'receiver' ? '接收器' : '键盘');
+const lastFrameLabel = computed(() => status.value.lastValidAgeMs == null ? '尚未收到' : `${status.value.lastValidAgeMs} ms 前`);
 
 async function refresh() {
   try {
@@ -76,6 +84,9 @@ onMounted(() => void refresh());
 .wireless-panel { display: flex; flex-direction: column; gap: 0.8rem; }
 .hint, small { color: var(--c-text-secondary); font-size: 0.78rem; line-height: 1.5; }
 .status-row, .poll-row { display: flex; justify-content: space-between; align-items: center; gap: 0.7rem; }
+.identity-block { display: grid; gap: 0.35rem; border-top: 1px solid var(--c-border); padding-top: 0.65rem; }
+.identity-block > div { display: flex; justify-content: space-between; gap: 0.7rem; font-size: 0.78rem; }
+.identity-block code { color: var(--c-text-primary); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; word-break: break-all; text-align: right; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 button, select { border: 1px solid var(--c-border); border-radius: 6px; padding: 0.45rem 0.7rem; background: var(--c-bg-tertiary); color: var(--c-text-primary); }
 button { cursor: pointer; } button.danger { color: var(--c-danger); } button:disabled { opacity: 0.5; cursor: wait; }
