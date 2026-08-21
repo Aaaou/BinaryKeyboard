@@ -226,7 +226,9 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       isCharging: resp.getUint8(d + 5) !== 0,
     };
 
-    if (resp.getUint8(2) >= 9) {
+    if (this.capabilities.receiverRole && resp.getUint8(2) >= 9) {
+      status.receiverStartupStage = resp.getUint8(d + 6);
+    } else if (resp.getUint8(2) >= 9) {
       status.adcRaw = resp.getUint16(d + 6, true);
       status.chargePinRaw = resp.getUint8(d + 8);
     }

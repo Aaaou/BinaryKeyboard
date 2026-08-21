@@ -45,27 +45,42 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[3]=0x21; resp[4]=0x08;
         resp[5]=KBD_VERSION_MAJOR; resp[6]=KBD_VERSION_MINOR; resp[7]=KBD_VERSION_PATCH;
         resp[8]=0; resp[9]=0; resp[10]=0; resp[11]=0; resp[12]=0; resp[13]=0;
-        resp[14]=1; resp[15]=1; len=18; break;
+        resp[14]=(KBD_RECEIVER_STARTUP_STAGE >= 3) ? 1 : 0;
+        resp[15]=1; len=18; break;
     case KBD_CMD_SYS_STATUS:
         resp[1]=KBD_WORK_MODE_2G4;
         resp[2]=(Receiver_Radio_GetState()==KBD_RADIO_PAIR_CONNECTED) ? KBD_CONN_CONNECTED : KBD_CONN_DISCONNECTED;
+        resp[6]=KBD_RECEIVER_STARTUP_STAGE;
         len=9; break;
     case KBD_CMD_RADIO_CAPS:
-        resp[1]=1; resp[2]=1; resp[3]=4;
+        resp[1]=(KBD_RECEIVER_STARTUP_STAGE >= 3) ? 1 : 0;
+        resp[2]=1; resp[3]=4;
         resp[4]=125; resp[5]=0; resp[6]=250; resp[7]=0;
         resp[8]=244; resp[9]=1; resp[10]=232; resp[11]=3; len=12; break;
     case KBD_CMD_RADIO_PAIR_STATUS:
         resp[1]=(uint8_t)Receiver_Radio_GetState(); len=8; break;
-    case KBD_CMD_RADIO_PAIR_START: ret=Receiver_Radio_StartPairing(); goto deferred;
-    case KBD_CMD_RADIO_PAIR_CANCEL: ret=Receiver_Radio_CancelPairing(); goto deferred;
-    case KBD_CMD_RADIO_PAIR_CLEAR: ret=Receiver_Radio_ClearPairing(); goto deferred;
+    case KBD_CMD_RADIO_PAIR_START:
+    case KBD_CMD_RADIO_PAIR_CANCEL:
+    case KBD_CMD_RADIO_PAIR_CLEAR:
+#if KBD_RECEIVER_STARTUP_STAGE >= 3
+        if (frame->cmd == KBD_CMD_RADIO_PAIR_START) ret=Receiver_Radio_StartPairing();
+        else if (frame->cmd == KBD_CMD_RADIO_PAIR_CANCEL) ret=Receiver_Radio_CancelPairing();
+        else ret=Receiver_Radio_ClearPairing();
+        goto deferred;
+#else
+        ret=-1; break;
+#endif
     case KBD_CMD_RADIO_POLL_RATE_GET: {
         uint16_t rate=Receiver_Radio_GetPollRate(); resp[1]=(uint8_t)rate; resp[2]=(uint8_t)(rate>>8); len=3; break;
     }
     case KBD_CMD_RADIO_POLL_RATE_SET:
+#if KBD_RECEIVER_STARTUP_STAGE >= 3
         if (frame->len < 2) ret=-1;
         else ret=Receiver_Radio_SetPollRate((uint16_t)frame->data[0] | ((uint16_t)frame->data[1]<<8));
         goto deferred;
+#else
+        ret=-1; break;
+#endif
     default: ret=-1; break;
     }
     if (ret) resp[0]=KBD_RESP_ERR_INVALID;

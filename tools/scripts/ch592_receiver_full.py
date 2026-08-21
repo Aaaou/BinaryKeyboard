@@ -47,9 +47,11 @@ def main() -> int:
     receiver_dir = firmware_dir / "build" / "receiver"
     diagnostic_dir = firmware_dir / "build" / "receiver-usb-diagnostic"
     time_dir = firmware_dir / "build" / "receiver-time-diagnostic"
+    rf_library_dir = firmware_dir / "build" / "receiver-rf-library-diagnostic"
     configure_and_build(cmake, receiver_dir, 3)
     configure_and_build(cmake, diagnostic_dir, 0)
     configure_and_build(cmake, time_dir, 1)
+    configure_and_build(cmake, rf_library_dir, 2)
 
     jumpiap_build()
     bootloader_build()
@@ -59,12 +61,17 @@ def main() -> int:
         diagnostic_dir, "CH592F-RECEIVER-USB-DIAGNOSTIC"
     )
     time_hex, time_bin = package(time_dir, "CH592F-RECEIVER-TIME-DIAGNOSTIC")
+    rf_library_hex, rf_library_bin = package(
+        rf_library_dir, "CH592F-RECEIVER-RF-LIBRARY-DIAGNOSTIC"
+    )
     print(f"Receiver FULL HEX (ISP): {full_hex}")
     print(f"Receiver FULL BIN (ISP): {full_bin}")
     print(f"Receiver USB diagnostic FULL HEX (ISP): {diagnostic_hex}")
     print(f"Receiver USB diagnostic FULL BIN (ISP): {diagnostic_bin}")
     print(f"Receiver time diagnostic FULL HEX (ISP): {time_hex}")
     print(f"Receiver time diagnostic FULL BIN (ISP): {time_bin}")
+    print(f"Receiver RF library diagnostic FULL HEX (ISP): {rf_library_hex}")
+    print(f"Receiver RF library diagnostic FULL BIN (ISP): {rf_library_bin}")
     return 0
 
 

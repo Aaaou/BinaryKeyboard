@@ -44,6 +44,16 @@
         </div>
       </div>
 
+      <div v-if="isReceiver" class="status-card diagnostic-card wide">
+        <div class="status-icon">
+          <i class="pi pi-cog"></i>
+        </div>
+        <div class="status-content">
+          <span class="status-label">启动阶段</span>
+          <span class="status-value">{{ receiverStageLabel }}</span>
+        </div>
+      </div>
+
       <!-- RGB 状态 -->
       <div v-if="supportsRgb" class="status-card rgb-card">
         <div class="status-icon">
@@ -141,6 +151,16 @@ const connectionIcon = computed(() => {
   if (isReceiver.value) return 'pi-desktop';
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
   return mode === 1 ? 'pi-wifi' : 'pi-link';
+});
+
+const receiverStageLabel = computed(() => {
+  const stage = deviceStore.deviceStatus?.receiverStartupStage;
+  return ({
+    0: '阶段 0 · 仅 USB',
+    1: '阶段 1 · 时间基准',
+    2: '阶段 2 · RF 库',
+    3: '阶段 3 · RF Host',
+  } as Record<number, string>)[stage ?? -1] ?? '未知阶段';
 });
 
 // RGB 状态
@@ -393,6 +413,15 @@ async function setOsMode(mode: OsMode) {
 .connection-card .status-icon {
   background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
+}
+
+.diagnostic-card {
+  border-left: 3px solid #f59e0b;
+}
+
+.diagnostic-card .status-icon {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
 }
 
 /* ── RGB 卡片 ── */
