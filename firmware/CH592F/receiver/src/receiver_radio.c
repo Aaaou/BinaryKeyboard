@@ -17,7 +17,7 @@
 /* RF host callbacks can be delayed by USB management traffic and channel
  * hopping. Keep the application link alive across a few missed intervals;
  * the RF library still performs the real peer timeout. */
-#define RX_LINK_TIMEOUT_TICKS (10u * 32768u)
+#define RX_LINK_TIMEOUT_TICKS (2u * 32768u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -207,8 +207,10 @@ static void bound_cb(staBound_t *status)
         memcpy(s_pending_peer, status->PeerInfo, sizeof(s_pending_peer));
         s_pending_device_id = status->devId;
         s_binding_pending = true;
-        s_last_valid_rx = RTC_GetCycle32k();
-        s_state = KBD_RADIO_PAIR_CONNECTED;
+        /* Binding success only confirms the RFBound transaction.  The
+         * application link is connected only after process_rf_rx() validates
+         * an actual keyboard frame from this peer. */
+        s_state = KBD_RADIO_PAIR_BOUND;
     } else if (status->status == bleTimeout) {
         s_has_sequence = false;
         /* RFBound reports a transaction timeout while it is re-entering its
