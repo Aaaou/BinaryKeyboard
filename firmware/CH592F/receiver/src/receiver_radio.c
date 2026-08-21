@@ -258,6 +258,10 @@ static int start_host(bool pairing)
     if (!pairing) memcpy(host.PeerInfo, s_nv.peer, sizeof(s_nv.peer));
     host.rfBoundCB = bound_cb;
     if (pairing) s_pair_started = RTC_GetCycle32k();
+    /* A link-age value belongs to the current RF Host session. Do not carry
+     * a timestamp from a previous binding into the next diagnostic view. */
+    s_last_valid_rx = 0u;
+    s_has_sequence = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
     s_host_startup_state = 1u;
     s_host_startup_result = 0u;
@@ -424,6 +428,7 @@ static void process_binding_save(void)
     if (memcmp(s_nv.peer, pending_peer, sizeof(s_nv.peer)) == 0 &&
         s_nv.device_id == pending_device_id) {
         s_has_sequence = false;
+        s_last_valid_rx = 0u;
         return;
     }
     uint8_t old_peer[6];
@@ -434,6 +439,7 @@ static void process_binding_save(void)
     if (save_nv() == 0) {
         apply_filter(false);
         s_has_sequence = false;
+        s_last_valid_rx = 0u;
     } else {
         memcpy(s_nv.peer, old_peer, sizeof(s_nv.peer));
         s_nv.device_id = old_device_id;
