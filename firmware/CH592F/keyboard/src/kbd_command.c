@@ -334,7 +334,7 @@ static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame)
   uint8_t local[6], peer[6];
   uint32_t fp = KBD_Radio2G4_GetPairFingerprint();
   uint32_t session = KBD_Radio2G4_GetSession();
-  uint8_t resp[25] = {KBD_RESP_OK, (uint8_t)KBD_Radio2G4_GetPairState(),
+  uint8_t resp[31] = {KBD_RESP_OK, (uint8_t)KBD_Radio2G4_GetPairState(),
                       0, KBD_Radio2G4_GetDeviceId(), 0};
   KBD_Radio2G4_GetLocalId(local);
   KBD_Radio2G4_GetPeerId(peer);
@@ -344,6 +344,10 @@ static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame)
   resp[19] = (uint8_t)(fp >> 16); resp[20] = (uint8_t)(fp >> 24);
   resp[21] = (uint8_t)session; resp[22] = (uint8_t)(session >> 8);
   resp[23] = (uint8_t)(session >> 16); resp[24] = (uint8_t)(session >> 24);
+  memset(&resp[25], 0xFF, 4);
+  resp[29] = 1;
+  resp[30] = (KBD_Radio2G4_HasPeer() ? 0x01 : 0x00) |
+             (KBD_Radio2G4_GetPairState() == KBD_RADIO_PAIRING ? 0x04 : 0x00);
   (void)frame;
   KBD_Command_SendResponse(KBD_CMD_RADIO_PAIR_STATUS, 0, resp, sizeof(resp));
 }

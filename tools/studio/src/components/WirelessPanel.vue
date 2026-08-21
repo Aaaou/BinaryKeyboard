@@ -10,6 +10,8 @@
       <div><span>配对指纹</span><code>{{ status.fingerprint || '配码完成后生成' }}</code></div>
       <div><span>绑定代次/会话</span><code>{{ status.generation ?? status.session ?? '-' }}</code></div>
       <div><span>最近有效帧</span><code>{{ lastFrameLabel }}</code></div>
+      <div><span>链路确认</span><code>{{ status.linkConfirmed ? '已收到有效帧' : '未确认' }}</code></div>
+      <div><span>诊断协议</span><code>{{ status.protocolVersion ? `v${status.protocolVersion}` : '旧固件' }}</code></div>
     </div>
     <div class="actions">
       <button type="button" :disabled="busy" @click="start">开始配码</button>

@@ -88,7 +88,11 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
             resp[25]=(uint8_t)v; resp[26]=(uint8_t)(v>>8);
             resp[27]=(uint8_t)(v>>16); resp[28]=(uint8_t)(v>>24);
         }
-        len=29; break;
+        resp[29]=1;
+        resp[30]=(Receiver_Radio_HasPeer() ? 0x01 : 0x00) |
+                 (Receiver_Radio_GetState()==KBD_RADIO_PAIR_CONNECTED ? 0x02 : 0x00) |
+                 (Receiver_Radio_GetState()==KBD_RADIO_PAIRING ? 0x04 : 0x00);
+        len=31; break;
     case KBD_CMD_RADIO_PAIR_START:
     case KBD_CMD_RADIO_PAIR_CANCEL:
     case KBD_CMD_RADIO_PAIR_CLEAR:

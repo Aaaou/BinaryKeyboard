@@ -84,6 +84,10 @@ export interface PairStatus {
   fingerprint?: string;
   generation?: number;
   lastValidAgeMs?: number | null;
+  protocolVersion?: number;
+  hasPeer?: boolean;
+  linkConfirmed?: boolean;
+  pairingActive?: boolean;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {

@@ -468,6 +468,35 @@ export function parseReceiveFrame(frame: Uint8Array): {
       }
       break;
 
+    case Command.RADIO_PAIR_STATUS:
+      if (len >= 2) {
+        const states = ["未绑定", "配码中", "已绑定", "已连接", "绑定不一致", "未启用"];
+        parsed += ` | 状态 ${states[data[1]] ?? `未知(${data[1]})`}`;
+      }
+      if (len >= 31) {
+        const fmtId = (offset: number) => Array.from(data.slice(offset, offset + 6))
+          .map((value) => value.toString(16).padStart(2, "0").toUpperCase()).join(":");
+        const le32 = (offset: number) =>
+          (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) |
+            (data[offset + 3] << 24)) >>> 0;
+        const role = data[2] === 1 ? "接收器" : "键盘";
+        const fingerprint = le32(17);
+        const ageTicks = le32(25);
+        const flags = data[30];
+        parsed += ` | ${role} | 本机 ${fmtId(5)} | 对端 ${fmtId(11)}`;
+        parsed += ` | 指纹 ${fingerprint ? fingerprint.toString(16).padStart(8, "0").toUpperCase() : "无"}`;
+        parsed += ` | 代次/会话 ${le32(21)} | RF状态 v${data[29]}`;
+        parsed += ` | peer=${(flags & 1) ? "有" : "无"}`;
+        parsed += ` link=${(flags & 2) ? "已确认" : "未确认"}`;
+        parsed += ` pairing=${(flags & 4) ? "是" : "否"}`;
+        parsed += ageTicks === 0xffffffff
+          ? " | 有效帧 从未收到"
+          : ` | 有效帧 ${Math.round(ageTicks * 1000 / 32768)}ms 前`;
+      } else {
+        parsed += ` | 旧状态包 ${len}B，无法读取绑定 ID；请刷入同一版本固件`;
+      }
+      break;
+
     case Command.DATAFLASH_INFO:
       if (len >= 17) {
         const total = (data[1] << 8) | data[2];

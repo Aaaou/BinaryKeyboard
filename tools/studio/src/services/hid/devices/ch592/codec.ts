@@ -524,6 +524,8 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     const fp = resp.getUint32(d + 17, true);
     const generation = payloadLength >= 25 ? resp.getUint32(d + 21, true) : 0;
     const lastAge = payloadLength >= 29 ? resp.getUint32(d + 25, true) : 0xffffffff;
+    const protocolVersion = payloadLength >= 31 ? resp.getUint8(d + 29) : 0;
+    const flags = payloadLength >= 31 ? resp.getUint8(d + 30) : 0;
     return {
       state,
       session: payloadLength >= 25 ? resp.getUint32(d + 21, true) : 0,
@@ -535,6 +537,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       fingerprint: fp ? fp.toString(16).padStart(8, '0').match(/../g)!.join('-').toUpperCase() : '未绑定',
       generation,
       lastValidAgeMs: lastAge === 0xffffffff ? null : Math.round(lastAge * 1000 / 32768),
+      protocolVersion,
+      hasPeer: protocolVersion ? (flags & 0x01) !== 0 : fp !== 0,
+      linkConfirmed: protocolVersion ? (flags & 0x02) !== 0 : state === 'connected',
+      pairingActive: protocolVersion ? (flags & 0x04) !== 0 : state === 'pairing',
     };
   }
 
