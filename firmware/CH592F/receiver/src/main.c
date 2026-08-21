@@ -17,18 +17,22 @@ int main(void)
         __asm__ volatile ("nop");
     }
 
-#if defined(KBD_RECEIVER_USB_DIAGNOSTIC) && KBD_RECEIVER_USB_DIAGNOSTIC
-    /* Keep the vendor HID available while isolating RF/TMOS startup faults. */
-    while (1) {
-        Receiver_Command_ProcessDeferred();
-    }
-#else
+#if KBD_RECEIVER_STARTUP_STAGE >= 1
     HAL_TimeInit();
+#endif
+#if KBD_RECEIVER_STARTUP_STAGE == 2
+    Receiver_Radio_RfLibraryInit();
+#endif
+#if KBD_RECEIVER_STARTUP_STAGE >= 3
     Receiver_Radio_Init();
+#endif
     while (1) {
+#if KBD_RECEIVER_STARTUP_STAGE >= 2
         TMOS_SystemProcess();
+#endif
+#if KBD_RECEIVER_STARTUP_STAGE >= 3
         Receiver_Radio_Process();
+#endif
         Receiver_Command_ProcessDeferred();
     }
-#endif
 }

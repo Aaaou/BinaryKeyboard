@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "kbd_radio_2g4.h"
 void Receiver_Radio_Init(void);
+void Receiver_Radio_RfLibraryInit(void);
 void Receiver_Radio_Process(void);
 int Receiver_Radio_StartPairing(void);
 int Receiver_Radio_CancelPairing(void);

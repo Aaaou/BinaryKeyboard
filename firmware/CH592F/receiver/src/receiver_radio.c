@@ -435,11 +435,16 @@ static int request_control(receiver_control_t control, uint16_t rate)
 
 void Receiver_Radio_Init(void)
 {
+    Receiver_Radio_RfLibraryInit();
+    start_host(!has_peer());
+}
+
+void Receiver_Radio_RfLibraryInit(void)
+{
     load_nv();
     GetMACAddress(s_local);
     s_last_usb_report = RTC_GetCycle32k();
     RF_LibInit(irq_cb);
-    start_host(!has_peer());
 }
 
 void Receiver_Radio_Process(void)
