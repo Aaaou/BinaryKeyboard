@@ -127,29 +127,24 @@ void KBD_Core_Process(void)
         return;
     }
 
-    if (!TrySyncKeyboardReport())
-    {
-        return;
-    }
+    /* A wireless transport can be temporarily busy. Keep consuming physical
+     * key events so a later release can replace an older pressed state. The
+     * dirty report below always represents the newest complete keyboard
+     * state and is retried when transport capacity returns. */
+    TrySyncKeyboardReport();
 
     /* 处理普通按键事件 */
     while (Key_GetEvent(&key_evt))
     {
         KBD_Core_HandleKeyEvent(&key_evt);
-        if (!TrySyncKeyboardReport())
-        {
-            return;
-        }
+        TrySyncKeyboardReport();
     }
 
     /* 处理旋钮事件 */
     while (Encoder_GetEvent(&key_evt))
     {
         KBD_Core_HandleKeyEvent(&key_evt);
-        if (!TrySyncKeyboardReport())
-        {
-            return;
-        }
+        TrySyncKeyboardReport();
     }
 
     /* 处理 FN 按键事件 */

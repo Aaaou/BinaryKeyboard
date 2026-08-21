@@ -17,6 +17,9 @@
  * timeout.  A 1 s interval was longer than the old 500 ms library window. */
 #define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
+/* Keyboard reports are absolute state. A deep FIFO increases release
+ * latency without adding reliability, so retain headroom in WCH's ring. */
+#define KBD_RF_APP_TX_LIMIT 4u
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -53,6 +56,7 @@ static uint32_t s_last_tx;
 /* RFBound callbacks run in the RF interrupt context. Defer WCH queue
  * recovery to the keyboard main loop, where RFRole_ClearTxData is safe. */
 static volatile bool s_tx_recovery_pending;
+static volatile uint8_t s_indicator_event;
 extern RF_DMADESCTypeDef *pDMATxGet;
 extern RF_DMADESCTypeDef DMATxDscrTab[RF_TXBUFNB];
 
@@ -144,7 +148,6 @@ static void rf_bound_cb(staBound_t *status)
          * allowed only after RFBound reports SUCCESS. BOUND means a saved
          * peer exists but the RF session is not ready yet. */
         s_state = KBD_RADIO_PAIR_CONNECTED;
-        KBD_RGB_Flash(180, 120, 0, 250);
     } else if (status->status == bleTimeout) {
         /* WCH documents bleTimeout as an internal reconnect/bindable
          * transition. Only an explicit pairing session owns the pairing
@@ -162,7 +165,7 @@ static void rf_bound_cb(staBound_t *status)
         }
         s_pair_restore_pending = true;
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-        KBD_RGB_Flash(180, 0, 0, 1500);
+        s_indicator_event = 1u;
     }
 }
 
@@ -192,10 +195,7 @@ static int rf_start(bool pairing)
     s_manual_pairing = pairing;
     s_tx_recovery_pending = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
-    if (pairing) {
-        s_pair_started = RTC_GetCycle32k();
-        KBD_RGB_Flash(0, 0, 180, 60000);
-    }
+    if (pairing) s_pair_started = RTC_GetCycle32k();
     return RFBound_StartDevice(&bound) == SUCCESS ? 0 : -1;
 }
 
@@ -203,7 +203,11 @@ static int rf_send(const uint8_t *data, uint8_t len)
 {
     uint32_t irq;
     SYS_DisableAllIrq(&irq);
-    if (pDMATxGet->Status & STA_DMA_ENABLE) {
+    uint8_t busy = 0u;
+    for (uint8_t i = 0u; i < RF_TXBUFNB; i++) {
+        if ((DMATxDscrTab[i].Status & STA_DMA_ENABLE) != 0u) busy++;
+    }
+    if (busy >= KBD_RF_APP_TX_LIMIT || (pDMATxGet->Status & STA_DMA_ENABLE)) {
         s_tx_busy++;
         SYS_RecoverIrq(irq);
         return -1;
@@ -245,7 +249,6 @@ int KBD_Radio2G4_Init(void)
         return rf_start(false);
     }
     s_state = KBD_RADIO_PAIR_UNBOUND;
-    KBD_RGB_Flash(0, 0, 180, 400);
     return 0;
 }
 void KBD_Radio2G4_Stop(void) { if (s_initialized) RFRole_Shut(); s_initialized = false; }
@@ -361,6 +364,10 @@ void KBD_Radio2G4_Process(void)
     /* Do not write WS2812 here.  The RGB scheduler owns the strip and maps
      * the radio state to the dedicated indicator LED, preventing two
      * independent loops from fighting over LED0/LED1 during pairing. */
+    if (s_indicator_event != 0u) {
+        s_indicator_event = 0u;
+        KBD_RGB_Flash(180, 0, 0, 600);
+    }
     if (s_state == KBD_RADIO_PAIRING) {
         if (rf_rtc_elapsed(RTC_GetCycle32k(), s_pair_started) >= KBD_RF_PAIR_WINDOW_TICKS) {
             RFRole_Shut();
@@ -394,7 +401,12 @@ void KBD_Radio2G4_Process(void)
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
     uint32_t now = RTC_GetCycle32k();
     if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
-    if (rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) s_last_keepalive = now;
+    /* Keepalive must never build a backlog behind input state. Queue one
+     * only while WCH's TX ring is completely idle. */
+    if (KBD_Radio2G4_GetTxDescriptorsBusy() == 0u &&
+        rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
+        s_last_keepalive = now;
+    }
 }
 
 #else
