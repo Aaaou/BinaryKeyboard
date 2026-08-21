@@ -15,7 +15,7 @@
 #define KBD_RF_KEYBOARD_ID 0u
 /* Keep the application heartbeat comfortably below the RFBound transaction
  * timeout.  A 1 s interval was longer than the old 500 ms library window. */
-#define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
+#define KBD_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
 typedef struct __attribute__((packed)) {
@@ -32,7 +32,6 @@ static uint8_t s_local_id[6], s_peer_id[6], s_device_id = KBD_RF_KEYBOARD_ID;
 static __attribute__((aligned(4))) uint8_t s_tmos_memory[1024];
 static uint32_t s_session;
 static uint32_t s_sequence;
-static uint32_t s_last_keepalive;
 static bool s_initialized;
 /* Pairing is transactional: keep the previous profile until the new
  * RFBound transaction has completed successfully.  This mirrors the
@@ -54,6 +53,9 @@ static uint32_t s_last_tx;
  * recovery to the keyboard main loop, where RFRole_ClearTxData is safe. */
 static volatile bool s_tx_recovery_pending;
 static volatile uint8_t s_indicator_event;
+static volatile bool s_rf_ready;
+static volatile bool s_disconnect_pending;
+static uint32_t s_disconnect_started;
 extern RF_DMADESCTypeDef *pDMATxGet;
 extern RF_DMADESCTypeDef DMATxDscrTab[RF_TXBUFNB];
 
@@ -133,14 +135,8 @@ static void rf_bound_cb(staBound_t *status)
          * not put the keyboard back into the manual pairing window, where
          * application keepalives are intentionally paused. */
         s_manual_pairing = false;
-        /* The WCH reference mouse transmits continuously, while an idle
-         * keyboard may have no report ready inside the Host's 100 ms
-         * supervision window. Queue a keepalive on the next main-loop turn
-         * instead of waiting for a full heartbeat interval after SUCCESS. */
-        uint32_t now = RTC_GetCycle32k();
-        s_last_keepalive = now >= KBD_RF_KEEPALIVE_TICKS
-            ? now - KBD_RF_KEEPALIVE_TICKS
-            : RTC_MAX_COUNT - (KBD_RF_KEEPALIVE_TICKS - now);
+        s_rf_ready = true;
+        s_disconnect_pending = false;
         /* Match WCH's reference device state machine: application traffic is
          * allowed only after RFBound reports SUCCESS. BOUND means a saved
          * peer exists but the RF session is not ready yet. */
@@ -149,12 +145,20 @@ static void rf_bound_cb(staBound_t *status)
         /* WCH documents bleTimeout as an internal reconnect/bindable
          * transition. Only an explicit pairing session owns the pairing
          * window; an already-bound keyboard remains bound here. */
+        s_rf_ready = false;
         if (s_manual_pairing) s_state = KBD_RADIO_PAIRING;
         else {
-            s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+            /* WCH delays its public disconnect callback. Preserve the HID
+             * state while RFBound attempts a short automatic reconnect. */
+            if (!s_disconnect_pending) {
+                s_disconnect_pending = true;
+                s_disconnect_started = RTC_GetCycle32k();
+            }
             s_tx_recovery_pending = rf_has_peer();
         }
     } else {
+        s_rf_ready = false;
+        s_disconnect_pending = false;
         if (s_pair_backup_valid) {
             memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
             s_device_id = s_pair_backup_device_id;
@@ -190,6 +194,8 @@ static int rf_start(bool pairing)
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
     s_manual_pairing = pairing;
+    s_rf_ready = false;
+    s_disconnect_pending = false;
     s_tx_recovery_pending = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
     if (pairing) s_pair_started = RTC_GetCycle32k();
@@ -198,6 +204,7 @@ static int rf_start(bool pairing)
 
 static int rf_send(const uint8_t *data, uint8_t len)
 {
+    if (!s_rf_ready) return -1;
     uint32_t irq;
     SYS_DisableAllIrq(&irq);
     RF_DMADESCTypeDef *next = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
@@ -235,7 +242,6 @@ int KBD_Radio2G4_Init(void)
                 ((uint32_t)s_local_id[3] << 16) ^
                 ((uint32_t)s_local_id[4] << 8) ^ s_local_id[5];
     if (s_session == 0u) s_session = 1u;
-    s_last_keepalive = RTC_GetCycle32k();
     rf_nv_load();
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
@@ -386,6 +392,12 @@ void KBD_Radio2G4_Process(void)
         s_pair_restore_pending = false;
         if (rf_has_peer()) rf_start(false);
     }
+    if (s_disconnect_pending &&
+        rf_rtc_elapsed(RTC_GetCycle32k(), s_disconnect_started) >=
+            KBD_RF_DISCONNECT_GRACE_TICKS) {
+        s_disconnect_pending = false;
+        s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+    }
     if (s_tx_recovery_pending) {
         /* bleTimeout can leave application packets queued while RFBound
          * returns to its internal reconnect state. The WCH API owns both the
@@ -394,18 +406,8 @@ void KBD_Radio2G4_Process(void)
         s_tx_recovery_pending = false;
         RFRole_ClearTxData(s_device_id);
     }
-    /* A persisted binding is not an active radio session. This is the key
-     * distinction used by WCH's reference firmware: do not enqueue HID or
-     * keepalive data until RFBound SUCCESS changes BOUND to CONNECTED. */
-    if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
-    uint32_t now = RTC_GetCycle32k();
-    if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
-    /* rf_send() uses WCH's one-reserved-descriptor rule. Do not add a second,
-     * arbitrary occupancy threshold here: a normally pipelined connection
-     * must still be able to send heartbeats while a key remains held. */
-    if (rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
-        s_last_keepalive = now;
-    }
+    /* RFBound owns idle supervision. Absence of new application HID frames is
+     * normal for a keyboard and must never be treated as a disconnected link. */
 }
 
 #else

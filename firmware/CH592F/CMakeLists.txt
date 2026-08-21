@@ -209,6 +209,7 @@ if(KBD_RECEIVER_BUILD)
         SDK/StdPeriphDriver/CH59x_clk.c SDK/StdPeriphDriver/CH59x_gpio.c
         SDK/StdPeriphDriver/CH59x_pwr.c SDK/StdPeriphDriver/CH59x_sys.c
         SDK/StdPeriphDriver/CH59x_timer0.c SDK/StdPeriphDriver/CH59x_timer1.c
+        SDK/StdPeriphDriver/CH59x_timer2.c
         SDK/StdPeriphDriver/CH59x_uart1.c SDK/StdPeriphDriver/CH59x_usbdev.c
         SDK/Startup/startup_CH592.S
     )

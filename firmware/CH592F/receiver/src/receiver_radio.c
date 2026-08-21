@@ -14,10 +14,14 @@
 #define RX_PAIR_WINDOW_TICKS (60u * 32768u)
 #define RX_KEYBOARD_DEVICE_TYPE 1u
 #define RX_REPORT_QUEUE_DEPTH 16u
-/* Match WCH's RF_REPORT_DISCONNECT_DELAY (160 * 4 TMOS ticks, about 400 ms).
- * The receiver must then send all-zero HID reports so the USB host cannot
- * retain a key-down state after the radio peer has disappeared. */
-#define RX_LINK_TIMEOUT_TICKS ((32768u * 400u) / 1000u)
+/* RFBound reports transport timeout independently of application traffic.
+ * Allow a short reconnect window, then release USB HID from an independent
+ * 1 ms timer so RF/TMOS work cannot delay stuck-key protection. */
+#define RX_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
+#define RX_RELEASE_KEYBOARD 0x01u
+#define RX_RELEASE_MOUSE    0x02u
+#define RX_RELEASE_CONSUMER 0x04u
+#define RX_RELEASE_ALL      0x07u
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -97,6 +101,10 @@ static bool s_boot_host_pending;
 static uint32_t s_boot_host_due;
 static bool s_pair_success_logged;
 static bool s_pair_timeout_logged;
+static volatile bool s_rf_disconnect_pending;
+static uint32_t s_rf_disconnect_started;
+static volatile uint8_t s_emergency_release_mask;
+static volatile bool s_link_lost_log_pending;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static void receiver_tmos_enable_irq(void)
@@ -221,6 +229,7 @@ static void apply_filter(receiver_filter_mode_t mode)
 static void bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
+        s_rf_disconnect_pending = false;
         memcpy(s_pending_peer, status->PeerInfo, sizeof(s_pending_peer));
         s_pending_device_id = status->devId;
         s_binding_pending = true;
@@ -234,13 +243,9 @@ static void bound_cb(staBound_t *status)
         }
     } else if (status->status == bleTimeout) {
         s_has_sequence = false;
-        /* RFBound reports a transaction timeout while it is re-entering its
-         * bindable/retry state. This is not an application link loss: a valid
-         * report may have arrived just before the callback. Keep the public
-         * state connected until the explicit application watchdog expires. */
-        if (s_state != KBD_RADIO_PAIR_CONNECTED ||
-            rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
-            s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
+        if (s_state == KBD_RADIO_PAIR_CONNECTED && !s_rf_disconnect_pending) {
+            s_rf_disconnect_pending = true;
+            s_rf_disconnect_started = RTC_GetCycle32k();
         }
         if (!s_pair_timeout_logged) {
             Receiver_Log_Event(RX_LOG_PAIR_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
@@ -248,7 +253,10 @@ static void bound_cb(staBound_t *status)
         }
     } else {
         s_has_sequence = false;
-        if (s_state != KBD_RADIO_PAIR_CONNECTED) {
+        if (s_state == KBD_RADIO_PAIR_CONNECTED && !s_rf_disconnect_pending) {
+            s_rf_disconnect_pending = true;
+            s_rf_disconnect_started = RTC_GetCycle32k();
+        } else if (s_state != KBD_RADIO_PAIR_CONNECTED) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         }
         Receiver_Log_Event(RX_LOG_PAIR_FAILURE, KBD_RECEIVER_STARTUP_STAGE, status->status);
@@ -386,6 +394,7 @@ static void process_rf_rx(void)
                 s_last_sequence = frame->header.sequence;
                 s_last_valid_rx = RTC_GetCycle32k();
                 s_has_sequence = true;
+                s_rf_disconnect_pending = false;
                 if (frame->header.type == KBD_RADIO_FRAME_KEYBOARD && frame->header.length == 8u) {
                     keyboard_enqueue((const USB_KeyboardReport_t *)frame->payload);
                 } else if (frame->header.type == KBD_RADIO_FRAME_MOUSE && frame->header.length == 4u) {
@@ -433,6 +442,45 @@ static void flush_usb_reports(uint32_t now)
         s_consumer_queue.head = (uint8_t)((s_consumer_queue.head + 1u) % RX_REPORT_QUEUE_DEPTH);
         s_consumer_queue.count--;
     }
+}
+
+static void emergency_release_try(void)
+{
+    USB_KeyboardReport_t keyboard = {0};
+    USB_MouseReport_t mouse = {0};
+    USB_ConsumerReport_t consumer = {0};
+
+    if ((s_emergency_release_mask & RX_RELEASE_KEYBOARD) != 0u &&
+        USB_Keyboard_TrySend(&keyboard)) {
+        s_emergency_release_mask &= (uint8_t)~RX_RELEASE_KEYBOARD;
+    }
+    if ((s_emergency_release_mask & RX_RELEASE_MOUSE) != 0u &&
+        USB_Mouse_TrySend(&mouse)) {
+        s_emergency_release_mask &= (uint8_t)~RX_RELEASE_MOUSE;
+    }
+    if ((s_emergency_release_mask & RX_RELEASE_CONSUMER) != 0u &&
+        USB_Consumer_TrySend(&consumer)) {
+        s_emergency_release_mask &= (uint8_t)~RX_RELEASE_CONSUMER;
+    }
+}
+
+__INTERRUPT
+__HIGH_CODE
+void TMR2_IRQHandler(void)
+{
+    TMR2_ClearITFlag(TMR0_3_IT_CYC_END);
+
+    if (s_rf_disconnect_pending &&
+        rtc_elapsed(RTC_GetCycle32k(), s_rf_disconnect_started) >=
+            RX_RF_DISCONNECT_GRACE_TICKS) {
+        s_rf_disconnect_pending = false;
+        s_has_sequence = false;
+        s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        s_emergency_release_mask = RX_RELEASE_ALL;
+        s_release_pending = true;
+        s_link_lost_log_pending = true;
+    }
+    if (s_emergency_release_mask != 0u) emergency_release_try();
 }
 
 static void process_binding_save(void)
@@ -577,6 +625,9 @@ void Receiver_Radio_RfLibraryInit(void)
     s_boot_host_pending = false;
     s_boot_host_due = 0u;
     RF_LibInit(irq_cb);
+    TMR2_TimerInit(GetSysClock() / 1000u);
+    TMR2_ITCfg(ENABLE, TMR0_3_IT_CYC_END);
+    PFIC_EnableIRQ(TMR2_IRQn);
 }
 
 uint8_t Receiver_Radio_GetHostStartupState(void) { return s_host_startup_state; }
@@ -601,13 +652,11 @@ void Receiver_Radio_Process(void)
     if (!s_host_active) return;
     if (s_rx_pending || (pDMARxGet->Status & STA_DMA_ENABLE) == 0u) process_rf_rx();
     uint32_t now = RTC_GetCycle32k();
-    if (s_state == KBD_RADIO_PAIR_CONNECTED &&
-        rtc_elapsed(now, s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
+    if (s_link_lost_log_pending) {
+        s_link_lost_log_pending = false;
         Receiver_Log_Event(RX_LOG_LINK_LOST, KBD_RECEIVER_STARTUP_STAGE, 0u);
-        s_release_pending = true;
-        s_has_sequence = false;
-        s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
     }
+    if (s_emergency_release_mask != 0u) s_release_pending = true;
     if (s_release_pending) enqueue_release_all();
     flush_usb_reports(now);
     if (s_state == KBD_RADIO_PAIRING && rtc_elapsed(now, s_pair_started) >= RX_PAIR_WINDOW_TICKS) {
