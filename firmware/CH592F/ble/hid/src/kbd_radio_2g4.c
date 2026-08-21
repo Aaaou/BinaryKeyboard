@@ -160,6 +160,11 @@ static int rf_send(const uint8_t *data, uint8_t len)
     pDMATxGet->Status = STA_DMA_ENABLE;
     pDMATxGet = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
     SYS_RecoverIrq(irq);
+    /* Normal builds of the shared RF library do not expose TX_FINISH in the
+     * process mask. Reaching this point means the packet has been accepted by
+     * the RF DMA ring, so leave the stale BOUND display state here. The
+     * receiver still independently confirms the link from valid frames. */
+    s_state = KBD_RADIO_PAIR_CONNECTED;
     return 0;
 }
 
