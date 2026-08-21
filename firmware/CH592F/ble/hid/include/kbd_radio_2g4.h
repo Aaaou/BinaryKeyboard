@@ -14,6 +14,8 @@ int KBD_Radio2G4_CancelPairing(void);
 int KBD_Radio2G4_ClearPairing(bool force);
 kbd_radio_pair_state_t KBD_Radio2G4_GetPairState(void);
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count);
+int KBD_Radio2G4_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
+int KBD_Radio2G4_SendConsumerReport(uint16_t key);
 void KBD_Radio2G4_Process(void);
 #ifdef __cplusplus
 }

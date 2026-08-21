@@ -11,6 +11,7 @@
 
 #include "CH59x_common.h"
 #include "usb_descriptors.h"
+#include <stdbool.h>
 
 /* ==================== Keyboard Definitions ==================== */
 /* Keyboard Modifier Keys */
@@ -185,6 +186,7 @@ void USB_Keyboard_Press(uint8_t modifier, uint8_t *keys, uint8_t num_keys);
 void USB_Keyboard_Release(void);
 void USB_Keyboard_Type(uint8_t modifier, uint8_t key);
 void USB_Keyboard_SendReport(void);
+bool USB_Keyboard_TrySend(const USB_KeyboardReport_t *report);
 void USB_Keyboard_SetLEDs(uint8_t leds);
 
 /* === Mouse Functions === */
@@ -194,12 +196,14 @@ void USB_Mouse_Click(uint8_t buttons);
 void USB_Mouse_Press(uint8_t buttons);
 void USB_Mouse_Release(void);
 void USB_Mouse_SendReport(void);
+bool USB_Mouse_TrySend(const USB_MouseReport_t *report);
 
 /* === Consumer Control Functions === */
 void USB_Consumer_Init(void);
 void USB_Consumer_Press(uint16_t key);
 void USB_Consumer_Release(void);
 void USB_Consumer_SendReport(void);
+bool USB_Consumer_TrySend(const USB_ConsumerReport_t *report);
 
 /* === Config Functions === */
 void USB_Config_Init(void);

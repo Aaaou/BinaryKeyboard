@@ -28,7 +28,9 @@
 #include "debug.h"
 
 /* ============== TMOS 内存池 ============== */
+#if !KBD_RADIO_2G4_ENABLED
 __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
+#endif
 
 #if (defined(BLE_MAC)) && (BLE_MAC == TRUE)
 const uint8_t MacAddr[6] = {0x84, 0xC2, 0xE4, 0x03, 0x02, 0x02};
@@ -72,7 +74,11 @@ int main(void)
 #endif
 
     /* BLE 库初始化（提供 TMOS 调度器，USB/BLE 模式都需要） */
+#if KBD_RADIO_2G4_ENABLED
+    HAL_TimeInit();
+#else
     CH59x_BLEInit();
+#endif
 
     /* HAL 初始化 */
     HAL_Init();
@@ -106,6 +112,9 @@ int main(void)
     uint8_t last_mode = KBD_GetLastMode();
     kbd_work_mode_t initial_mode = (last_mode <= KBD_WORK_MODE_2G4)
         ? (kbd_work_mode_t)last_mode : KBD_WORK_MODE_USB;
+#if KBD_RADIO_2G4_ENABLED
+    initial_mode = KBD_WORK_MODE_2G4;
+#endif
 
     /*
      * 按 WCH Application 示例思路：每种模式只初始化对应协议栈
@@ -113,7 +122,11 @@ int main(void)
      * - BLE 模式：完整 BLE HID 初始化，跳过 USB
      */
     if (initial_mode == KBD_WORK_MODE_BLE) {
+#if !KBD_RADIO_2G4_ENABLED
         GAPRole_PeripheralInit();
+#else
+        initial_mode = KBD_WORK_MODE_2G4;
+#endif
     }
 
     /* 命令处理初始化 */

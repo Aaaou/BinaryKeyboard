@@ -29,6 +29,11 @@ set(KBD_MODEL "AUTO" CACHE STRING "Keyboard model suffix for device name (AUTO u
 set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "Override full USB/BLE device name, empty means auto compose")
 option(KBD_SLEEP_TEST_MODE "Enable visible idle/sleep timing indicators" OFF)
 option(KBD_RADIO_2G4_ENABLED "Enable validated CH592F RF FAST backend" OFF)
+option(KBD_RECEIVER_BUILD "Build the CH592F 2.4G USB receiver" OFF)
+if(KBD_RECEIVER_BUILD)
+    set(KBD_RADIO_2G4_ENABLED ON CACHE BOOL "" FORCE)
+    set(KBD_DEVICE_NAME_OVERRIDE "BinaryKeyboard 2.4G Receiver" CACHE STRING "" FORCE)
+endif()
 string(TOUPPER "${KEYBOARD}" KEYBOARD_UPPER)
 string(TOUPPER "${KBD_MODEL}" KBD_MODEL_UPPER_RAW)
 
@@ -63,7 +68,9 @@ if(KBD_DEVICE_NAME_LEN GREATER 31)
     message(WARNING "Device name length > 31, USB product string will be truncated at runtime.")
 endif()
 
-if(KBD_DEVICE_NAME_LEN GREATER 29)
+if(KBD_RECEIVER_BUILD)
+    # Receiver does not link BLE/GATT, so BLE name limits do not apply.
+elseif(KBD_DEVICE_NAME_LEN GREATER 29)
     message(WARNING "Device name length > 29, BLE scan response local name will be shortened.")
 elseif(KBD_DEVICE_NAME_LEN GREATER 21)
     message(WARNING "Device name length > 21, BLE GATT Device Name will be truncated.")
@@ -105,11 +112,24 @@ set(CH592_BLE_CORE_SOURCES
 
 set(CH592_BLE_HID_SOURCES
     # BLE – HID
-    ble/hid/src/ble_hid.c
-    ble/hid/src/ble_hid_service.c
     ble/hid/src/kbd_mode.c
     ble/hid/src/kbd_radio_2g4.c
+    ble/hid/src/kbd_radio_protocol.c
 )
+
+if(KBD_RADIO_2G4_ENABLED)
+    set(CH592_BLE_CORE_SOURCES "")
+    list(APPEND CH592_BLE_HID_SOURCES
+        ble/hid/src/ble_hid_radio_stubs.c
+        radio_fast/src/radio_platform_stubs.c
+        radio_fast/src/rf_fast.c
+    )
+else()
+    list(APPEND CH592_BLE_HID_SOURCES
+        ble/hid/src/ble_hid.c
+        ble/hid/src/ble_hid_service.c
+    )
+endif()
 
 set(CH592_BLE_PROFILE_SOURCES
     # BLE – GATT profiles
@@ -153,8 +173,13 @@ set(CH592_VENDOR_DRIVER_SOURCES
 set(CH592_STARTUP_SOURCES
     # Startup (assembly)
     SDK/Startup/startup_CH592.S
-    SDK/Startup/ble_task_scheduler.S
 )
+if(KBD_RADIO_2G4_ENABLED)
+    set(CH592_BLE_PROFILE_SOURCES "")
+endif()
+if(NOT KBD_RADIO_2G4_ENABLED)
+    list(APPEND CH592_STARTUP_SOURCES SDK/Startup/ble_task_scheduler.S)
+endif()
 
 set(CH592_SOURCES
     ${CH592_ENTRY_SOURCES}
@@ -168,7 +193,24 @@ set(CH592_SOURCES
     ${CH592_STARTUP_SOURCES}
 )
 
+if(KBD_RECEIVER_BUILD)
+    set(CH592_SOURCES
+        receiver/src/main.c receiver/src/receiver_radio.c receiver/src/receiver_command.c
+        receiver/src/receiver_mode_stubs.c ble/hid/src/kbd_radio_protocol.c
+        radio_fast/src/rf_fast.c radio_fast/src/radio_platform_stubs.c
+        usb/src/usb_descriptors.c usb/src/usb_device.c usb/src/usb_hid.c
+        SDK/StdPeriphDriver/CH59x_clk.c SDK/StdPeriphDriver/CH59x_gpio.c
+        SDK/StdPeriphDriver/CH59x_pwr.c SDK/StdPeriphDriver/CH59x_sys.c
+        SDK/StdPeriphDriver/CH59x_timer0.c SDK/StdPeriphDriver/CH59x_timer1.c
+        SDK/StdPeriphDriver/CH59x_uart1.c SDK/StdPeriphDriver/CH59x_usbdev.c
+        SDK/Startup/startup_CH592.S
+    )
+endif()
+
 add_executable(${TARGET_ELF} ${CH592_SOURCES})
+set_source_files_properties(radio_fast/src/rf_fast.c PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-variable"
+)
 add_dependencies(${TARGET_ELF} ch592f_version_header)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${CH592_SOURCES})
 
@@ -188,6 +230,13 @@ set(CH592_INCLUDE_DIRS
     ble/core/include
     keyboard/include
 )
+
+if(KBD_RADIO_2G4_ENABLED)
+    list(APPEND CH592_INCLUDE_DIRS radio_fast/include)
+endif()
+if(KBD_RECEIVER_BUILD)
+    list(APPEND CH592_INCLUDE_DIRS receiver/include)
+endif()
 
 target_include_directories(${TARGET_ELF} PRIVATE ${CH592_INCLUDE_DIRS})
 
@@ -221,6 +270,13 @@ endif()
 if(KBD_RADIO_2G4_ENABLED)
     list(APPEND CH592_COMPILE_DEFINITIONS KBD_RADIO_2G4_ENABLED=1)
 endif()
+if(KBD_RECEIVER_BUILD)
+    list(APPEND CH592_COMPILE_DEFINITIONS
+        KBD_RECEIVER_BUILD=1
+        KBD_USB_INPUT_INTERVAL=0x01
+        USB_PID=0x2108
+    )
+endif()
 
 if(KBD_SLEEP_TEST_MODE)
     list(APPEND CH592_COMPILE_DEFINITIONS
@@ -253,8 +309,17 @@ target_link_options(${TARGET_ELF} PRIVATE
 # Pre-compiled vendor libraries
 target_link_libraries(${TARGET_ELF} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/SDK/StdPeriphDriver/libISP592.a
-    ${CMAKE_CURRENT_SOURCE_DIR}/ble/lib/libCH59xBLE.a
 )
+
+if(NOT KBD_RADIO_2G4_ENABLED)
+    target_link_libraries(${TARGET_ELF} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ble/lib/libCH59xBLE.a)
+endif()
+
+if(KBD_RADIO_2G4_ENABLED)
+    target_link_libraries(${TARGET_ELF} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/radio_fast/lib/libCH59xRF_FAST.a
+    )
+endif()
 
 # ---------------------------------------------------------------------------
 # Post-build: generate .bin and .hex, print size

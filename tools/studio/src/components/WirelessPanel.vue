@@ -1,7 +1,7 @@
 <template>
   <div class="panel wireless-panel">
     <h3 class="panel-title"><i class="pi pi-wifi"></i>2.4G 无线与接收器</h3>
-    <p class="hint">仅 RF-enabled 固件显示。当前普通 CH592F 键盘未集成 2.4G 后端，不会接受配码命令。</p>
+    <p class="hint">仅 RF-enabled 键盘固件或 CH592F 接收器显示。</p>
     <div class="status-row"><span>配码状态</span><strong>{{ pairLabel }}</strong></div>
     <div class="status-row"><span>设备角色</span><strong>{{ roleLabel }}</strong></div>
     <div class="actions">
@@ -9,13 +9,13 @@
       <button type="button" :disabled="busy" @click="cancel">取消配码</button>
       <button type="button" class="danger" :disabled="busy" @click="clear">清除绑定</button>
     </div>
-    <div class="poll-row">
+    <div v-if="caps.role === 'receiver'" class="poll-row">
       <label for="radio-poll-rate">USB 轮询率</label>
       <select id="radio-poll-rate" v-model.number="pollRate" :disabled="busy" @change="savePollRate">
         <option v-for="rate in pollRates" :key="rate" :value="rate">{{ rate }} Hz</option>
       </select>
     </div>
-    <small>首次配对：先让接收器进入等待配码，再点击键盘“开始配码”；成功后双方保存同一绑定摘要。更换设备请使用“重新配码”，不要只清除一端。</small>
+    <small>首次配对：未绑定的接收器会自动等待配码，再通过 USB 连接键盘并点击“开始配码”。更换设备时清除任意一端后，两端重新进入配码即可，接收器不会报废。</small>
   </div>
 </template>
 
@@ -37,7 +37,9 @@ async function refresh() {
   try {
     caps.value = await hidService.getRadioCapabilities();
     status.value = await hidService.getPairStatus();
-    pollRate.value = await hidService.getPollRate();
+    if (caps.value.role === 'receiver') {
+      pollRate.value = await hidService.getPollRate();
+    }
   } catch (error) {
     showToast('warn', '2.4G 不可用', error instanceof Error ? error.message : '当前固件未启用 RF 后端');
   }

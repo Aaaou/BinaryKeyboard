@@ -153,6 +153,11 @@ int KBD_Mode_Init(kbd_work_mode_t initial_mode, kbd_mode_callbacks_t *pCBs)
             g_current_mode = KBD_WORK_MODE_USB;
             USB_Device_Init();
         }
+        else
+        {
+            /* RF-only builds still expose Vendor HID over USB for Studio. */
+            USB_Device_Init();
+        }
     }
 
     return 0;
@@ -334,6 +339,8 @@ kbd_conn_state_t KBD_Mode_GetConnState(void)
 
 bool KBD_Mode_IsConnected(void)
 {
+    if (g_current_mode == KBD_WORK_MODE_2G4)
+        return KBD_Radio2G4_GetPairState() == KBD_RADIO_PAIR_CONNECTED;
     return (g_conn_state == KBD_CONN_CONNECTED);
 }
 
@@ -344,6 +351,8 @@ bool KBD_Mode_IsInputReady(void)
         return (g_USB_DeviceState == USB_STATE_CONFIGURED);
     }
 
+    if (g_current_mode == KBD_WORK_MODE_2G4)
+        return KBD_Radio2G4_GetPairState() == KBD_RADIO_PAIR_CONNECTED;
     return BLE_HID_IsKeyboardReady();
 }
 
@@ -531,10 +540,11 @@ int KBD_Mode_ReleaseAllKeys(void)
         USB_Keyboard_Release();
         return 0;
     }
-    else
+    else if (g_current_mode == KBD_WORK_MODE_BLE)
     {
         return BLE_HID_SendKeyboardReport(0, NULL, 0);
     }
+    return KBD_Radio2G4_SendKeyboardReport(0, NULL, 0);
 }
 
 int KBD_Mode_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel)
@@ -559,10 +569,11 @@ int KBD_Mode_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel)
         g_mouse_report[0] = buttons;
         return 0;
     }
-    else
+    else if (g_current_mode == KBD_WORK_MODE_BLE)
     {
         return BLE_HID_SendMouseReport(buttons, x, y, wheel);
     }
+    return KBD_Radio2G4_SendMouseReport(buttons, x, y, wheel);
 }
 
 int KBD_Mode_SendMouseClick(uint8_t buttons)
@@ -599,10 +610,11 @@ int KBD_Mode_SendConsumerReport(uint16_t key)
         }
         return 0;
     }
-    else
+    else if (g_current_mode == KBD_WORK_MODE_BLE)
     {
         return BLE_HID_SendConsumerReport(key);
     }
+    return KBD_Radio2G4_SendConsumerReport(key);
 }
 
 int KBD_Mode_SendConsumerKey(uint16_t key)

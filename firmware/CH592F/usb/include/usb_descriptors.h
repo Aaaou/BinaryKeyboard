@@ -14,7 +14,9 @@
 /* USB 设备配置 */
 #define DevEP0SIZE              0x40
 #define USB_VID                 0x413D  // Vendor ID
+#ifndef USB_PID
 #define USB_PID                 0x2107  // Product ID
+#endif
 
 /* 接口编号定义 */
 #define INTF_KEYBOARD           0

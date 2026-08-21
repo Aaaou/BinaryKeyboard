@@ -1,5 +1,6 @@
 import {
   CH592_PRODUCT_ID,
+  CH592_RECEIVER_PRODUCT_ID,
   CH592_VENDOR_ID,
   REPORT_ID_COMMAND,
   REPORT_ID_RESPONSE,
@@ -14,13 +15,23 @@ export const CH592_FILTER: HIDDeviceFilter = {
   usage: 0x01,
 };
 
+export const CH592_RECEIVER_FILTER: HIDDeviceFilter = {
+  vendorId: CH592_VENDOR_ID,
+  productId: CH592_RECEIVER_PRODUCT_ID,
+  usagePage: 0xFF00,
+  usage: 0x01,
+};
+
 export class Ch592HidAdapter extends BaseHidAdapter<DataView> {
   constructor() {
-    super(new Ch592Codec(), [CH592_FILTER]);
+    super(new Ch592Codec(), [CH592_FILTER, CH592_RECEIVER_FILTER]);
   }
 
   matches(device: HIDDevice): boolean {
-    return device.vendorId === CH592_VENDOR_ID && device.productId === CH592_PRODUCT_ID;
+    return (
+      device.vendorId === CH592_VENDOR_ID &&
+      (device.productId === CH592_PRODUCT_ID || device.productId === CH592_RECEIVER_PRODUCT_ID)
+    );
   }
 
   protected get commandReportId(): number {

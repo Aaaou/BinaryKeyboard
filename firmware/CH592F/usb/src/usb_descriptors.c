@@ -13,6 +13,10 @@
 
 #define USB_STRING_DESC_MAX_CHARS 31
 
+#ifndef KBD_USB_INPUT_INTERVAL
+#define KBD_USB_INPUT_INTERVAL 0x0A
+#endif
+
 /* USB 设备描述符 */
 const uint8_t USB_DeviceDescriptor[] = {
     0x12,                           // bLength
@@ -69,7 +73,7 @@ const uint8_t USB_ConfigDescriptor[] = {
     EP_KEYBOARD_IN,                 // bEndpointAddress
     0x03,                           // bmAttributes (Interrupt)
     HID_KEYBOARD_REPORT_SIZE, 0x00, // wMaxPacketSize
-    0x0A,                           // bInterval (10ms)
+    KBD_USB_INPUT_INTERVAL,         // bInterval (receiver=1ms, keyboard=10ms)
 
     /* ================ Interface 1: Mouse ================ */
     0x09,                           // bLength
@@ -97,7 +101,7 @@ const uint8_t USB_ConfigDescriptor[] = {
     EP_MOUSE_IN,                    // bEndpointAddress
     0x03,                           // bmAttributes (Interrupt)
     HID_MOUSE_REPORT_SIZE, 0x00,    // wMaxPacketSize
-    0x0A,                           // bInterval (10ms)
+    KBD_USB_INPUT_INTERVAL,         // bInterval (receiver=1ms, keyboard=10ms)
 
     /* ================ Interface 2: Consumer Control ================ */
     0x09,                           // bLength
@@ -125,7 +129,7 @@ const uint8_t USB_ConfigDescriptor[] = {
     EP_CONSUMER_IN,                 // bEndpointAddress
     0x03,                           // bmAttributes (Interrupt)
     HID_CONSUMER_REPORT_SIZE, 0x00, // wMaxPacketSize
-    0x0A,                           // bInterval (10ms)
+    KBD_USB_INPUT_INTERVAL,         // bInterval (receiver=1ms, keyboard=10ms)
 
     /* ================ Interface 3: Config (Vendor) ================ */
     0x09,                           // bLength

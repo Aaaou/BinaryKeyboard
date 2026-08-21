@@ -9,6 +9,7 @@
 
 export const CH592_VENDOR_ID = 0x413d;
 export const CH592_PRODUCT_ID = 0x2107;
+export const CH592_RECEIVER_PRODUCT_ID = 0x2108;
 export const CH552_VENDOR_ID = 0x1209;
 export const CH552_PRODUCT_ID = 0xc55d;
 

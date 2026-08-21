@@ -119,6 +119,14 @@ void USB_Keyboard_SendReport(void)
     DevEP1_IN_Deal(sizeof(USB_KeyboardReport_t));
 }
 
+bool USB_Keyboard_TrySend(const USB_KeyboardReport_t *report)
+{
+    if (!report || !EP1_GetINSta()) return false;
+    memcpy(pEP1_IN_DataBuf, report, sizeof(*report));
+    DevEP1_IN_Deal(sizeof(*report));
+    return true;
+}
+
 /**
  * @brief 设置键盘 LED 状态
  */
@@ -210,6 +218,14 @@ void USB_Mouse_SendReport(void)
     DevEP2_IN_Deal(sizeof(USB_MouseReport_t));
 }
 
+bool USB_Mouse_TrySend(const USB_MouseReport_t *report)
+{
+    if (!report || !EP2_GetINSta()) return false;
+    memcpy(pEP2_IN_DataBuf, report, sizeof(*report));
+    DevEP2_IN_Deal(sizeof(*report));
+    return true;
+}
+
 /* ==================== Consumer Control Functions ==================== */
 
 /**
@@ -255,6 +271,14 @@ void USB_Consumer_SendReport(void)
 {
     memcpy(pEP3_IN_DataBuf, &g_ConsumerReport, sizeof(USB_ConsumerReport_t));
     DevEP3_IN_Deal(sizeof(USB_ConsumerReport_t));
+}
+
+bool USB_Consumer_TrySend(const USB_ConsumerReport_t *report)
+{
+    if (!report || !EP3_GetINSta()) return false;
+    memcpy(pEP3_IN_DataBuf, report, sizeof(*report));
+    DevEP3_IN_Deal(sizeof(*report));
+    return true;
 }
 
 /* ==================== Config Functions ==================== */

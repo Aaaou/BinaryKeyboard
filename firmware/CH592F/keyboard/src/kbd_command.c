@@ -288,8 +288,8 @@ static void HandleSysInfo(const kbd_cmd_frame_t *frame)
   resp[11] = (uint8_t)KBD_GetType(); /* 键盘类型 */
   resp[12] = KBD_GetTotalKeyCount(); /* 实际键位数 */
   resp[13] = KBD_FN_NUM_KEYS;        /* FN 键数量 */
-  resp[14] = 0; /* RF FAST backend is not linked in this target. */
-  resp[15] = 0;
+  resp[14] = KBD_RADIO_2G4_ENABLED ? 1 : 0;
+  resp[15] = KBD_RECEIVER_BUILD ? 1 : 0;
   resp[16] = 0;
   resp[17] = 0;
 
@@ -319,15 +319,11 @@ static void HandleSysStatus(const kbd_cmd_frame_t *frame)
   KBD_Command_SendResponse(KBD_CMD_SYS_STATUS, 0, resp, 9);
 }
 
-/*
- * Contract probe for Studio. RF FAST is not linked by the shipping keyboard
- * target yet, so declare the capability explicitly instead of accepting pairing
- * commands that would never reach a receiver.
- */
+/* Contract probe for Studio. Ordinary USB/BLE builds report enabled=0. */
 static void HandleRadioCaps(const kbd_cmd_frame_t *frame)
 {
   uint8_t resp[12] = {KBD_RESP_OK, KBD_RADIO_2G4_ENABLED ? 1 : 0,
-                      KBD_RADIO_2G4_ENABLED ? 0 : 0, 4,
+                      KBD_RECEIVER_BUILD ? 1 : 0, 4,
                       0x7D, 0x00, 0xFA, 0x00, 0xF4, 0x01, 0xE8, 0x03};
   (void)frame;
   KBD_Command_SendResponse(KBD_CMD_RADIO_CAPS, 0, resp, sizeof(resp));
