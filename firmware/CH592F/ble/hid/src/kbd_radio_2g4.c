@@ -120,6 +120,14 @@ static void rf_bound_cb(staBound_t *status)
          * not put the keyboard back into the manual pairing window, where
          * application keepalives are intentionally paused. */
         s_manual_pairing = false;
+        /* The WCH reference mouse transmits continuously, while an idle
+         * keyboard may have no report ready inside the Host's 100 ms
+         * supervision window. Queue a keepalive on the next main-loop turn
+         * instead of waiting for a full heartbeat interval after SUCCESS. */
+        uint32_t now = RTC_GetCycle32k();
+        s_last_keepalive = now >= KBD_RF_KEEPALIVE_TICKS
+            ? now - KBD_RF_KEEPALIVE_TICKS
+            : RTC_MAX_COUNT - (KBD_RF_KEEPALIVE_TICKS - now);
         /* RFBound SUCCESS means the binding transaction completed. It does
          * not prove that an application HID frame has reached the receiver. */
         s_state = KBD_RADIO_PAIR_BOUND;
