@@ -13,7 +13,9 @@
 #define KBD_RF_BIND_MAGIC 0x3244424Bu
 #define KBD_RF_DEVICE_TYPE 1u
 #define KBD_RF_KEYBOARD_ID 0u
-#define KBD_RF_KEEPALIVE_TICKS 32768u
+/* Keep the application heartbeat comfortably below the RFBound transaction
+ * timeout.  A 1 s interval was longer than the old 500 ms library window. */
+#define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -104,8 +106,9 @@ static void rf_bound_cb(staBound_t *status)
         s_state = KBD_RADIO_PAIR_CONNECTED;
         KBD_RGB_Flash(0, 180, 0, 1500);
     } else if (status->status == bleTimeout) {
-        s_state = KBD_RADIO_PAIR_BOUND;
-        KBD_RGB_Flash(180, 0, 0, 1500);
+        /* RFBound timeout only denotes an internal transaction retry.  Do not
+         * turn it into a visible link failure or stop application keepalive. */
+        s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
     } else {
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         KBD_RGB_Flash(180, 0, 0, 1500);
@@ -125,8 +128,9 @@ static int rf_start(void)
     bound.devType = KBD_RF_DEVICE_TYPE;
     bound.deviceId = s_device_id;
     bound.speed = 12;
-    /* Match the receiver Host window and tolerate USB/TMOS scheduling jitter. */
-    bound.timeout = 500;
+    /* Permit scheduling and channel-hop jitter; valid frames are supervised
+     * independently by the receiver's application-level watchdog. */
+    bound.timeout = 1500;
     memcpy(bound.OwnInfo, s_local_id, sizeof(s_local_id));
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;

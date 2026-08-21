@@ -210,7 +210,6 @@ static void bound_cb(staBound_t *status)
         s_last_valid_rx = RTC_GetCycle32k();
         s_state = KBD_RADIO_PAIR_CONNECTED;
     } else if (status->status == bleTimeout) {
-        s_release_pending = true;
         s_has_sequence = false;
         /* RFBound reports a transaction timeout while it is re-entering its
          * bindable/retry state. This is not an application link loss: a valid
@@ -241,7 +240,8 @@ static int start_host(bool pairing)
     apply_filter(pairing);
     host.periTime = 8;
     host.hop = RF_HOP_MANUF_MODE;
-    host.timeout = 500;
+    /* Keep this comfortably above the keyboard's 100 ms heartbeat. */
+    host.timeout = 1500;
     /* WCH marks the Host devType field as reserved. Device type filtering
      * belongs exclusively to rfRoleList_t, configured by apply_filter(). */
     host.devType = 0u;
