@@ -158,6 +158,9 @@ const showMacroPanel = computed(() => previewKeyboardType.value < 0 && deviceSto
 const showConfigLibrary = computed(() => previewKeyboardType.value < 0);
 const showResetButton = computed(() => previewKeyboardType.value < 0 && deviceStore.supportsFactoryReset);
 const showLayerBadge = computed(() => previewKeyboardType.value >= 0 || deviceStore.supportsMultiLayer);
+const isReceiver = computed(
+  () => previewKeyboardType.value < 0 && deviceStore.capabilities.receiverRole,
+);
 const showStormDataFlashPanel = computed(
   () =>
     themeId.value === 'storm' &&
@@ -269,10 +272,10 @@ function onCatAction(action: string) {
         <StormDataFlashEntry v-if="showStormDataFlashPanel" @open="dataFlashVisible = true" />
       </aside>
 
-      <div class="keyboard-spacer"></div>
+      <div v-if="!isReceiver" class="keyboard-spacer"></div>
 
       <!-- 中央键盘区 -->
-      <section class="keyboard-section" :style="keyboardSectionStyle">
+      <section v-if="!isReceiver" class="keyboard-section" :style="keyboardSectionStyle">
         <KeyboardDecoration />
 
         <!-- 猫咪主题猫耳（独立浮层，不侵入键盘组件） -->

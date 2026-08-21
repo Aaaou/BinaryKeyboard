@@ -2,7 +2,7 @@
   <div class="panel keyboard-status-panel">
     <h3 class="panel-title">
       <i class="pi pi-desktop"></i>
-      键盘状态
+      {{ isReceiver ? '接收器状态' : '键盘状态' }}
     </h3>
 
     <div class="status-grid">
@@ -39,7 +39,7 @@
           <i class="pi" :class="connectionIcon"></i>
         </div>
         <div class="status-content">
-          <span class="status-label">当前模式</span>
+          <span class="status-label">{{ isReceiver ? '当前连接' : '当前模式' }}</span>
           <span class="status-value">{{ connectionMode }}</span>
         </div>
       </div>
@@ -100,6 +100,7 @@ const deviceStore = useDeviceStore();
 const supportsBattery = computed(() => deviceStore.supportsBattery);
 const supportsRgb = computed(() => deviceStore.supportsRgb);
 const supportsOsMode = computed(() => deviceStore.supportsOsMode);
+const isReceiver = computed(() => deviceStore.capabilities.receiverRole);
 const isSavingOsMode = ref(false);
 
 // 电池
@@ -130,12 +131,14 @@ const voltageLabel = computed(() => {
 
 // 当前工作模式
 const connectionMode = computed(() => {
+  if (isReceiver.value) return 'USB 管理通道';
   if (!deviceStore.supportsWireless) return 'USB 模式';
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
   return mode === 1 ? 'BLE 模式' : 'USB 模式';
 });
 
 const connectionIcon = computed(() => {
+  if (isReceiver.value) return 'pi-desktop';
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
   return mode === 1 ? 'pi-wifi' : 'pi-link';
 });
