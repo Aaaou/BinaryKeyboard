@@ -212,10 +212,19 @@ static void bound_cb(staBound_t *status)
     } else if (status->status == bleTimeout) {
         s_release_pending = true;
         s_has_sequence = false;
-        s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
+        /* RFBound reports a transaction timeout while it is re-entering its
+         * bindable/retry state. This is not an application link loss: a valid
+         * report may have arrived just before the callback. Keep the public
+         * state connected until the explicit application watchdog expires. */
+        if (s_state != KBD_RADIO_PAIR_CONNECTED ||
+            rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) >= RX_LINK_TIMEOUT_TICKS) {
+            s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIRING;
+        }
     } else {
         s_has_sequence = false;
-        s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        if (s_state != KBD_RADIO_PAIR_CONNECTED) {
+            s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        }
     }
 }
 
