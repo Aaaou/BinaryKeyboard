@@ -47,6 +47,18 @@ describe('BATTERY response parsing', () => {
 });
 
 describe('SYS_STATUS response parsing', () => {
+  it('labels receiver stage instead of treating it as BLE battery data', () => {
+    const frame = new Uint8Array(64);
+    frame[0] = Command.SYS_STATUS;
+    frame[2] = 9;
+    frame.set([ResponseCode.OK, 2, 0, 0, 0, 0, 1, 0, 0], 3);
+
+    const parsed = parseReceiveFrame(frame).parsed;
+    expect(parsed).toContain('2.4G 接收器 未连接');
+    expect(parsed).toContain('启动阶段 1');
+    expect(parsed).not.toContain('ADC原始值');
+  });
+
   it('maps firmware connection state 2 to BLE connected', () => {
     const frame = new Uint8Array(64);
     frame[0] = Command.SYS_STATUS;

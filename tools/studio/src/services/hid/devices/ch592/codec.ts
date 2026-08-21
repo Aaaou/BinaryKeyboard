@@ -184,7 +184,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
           macroActions: false,
           wheelClickAction: false,
           battery: false,
-          logs: false,
+          // Receiver boot diagnostics are delivered through the same EP4
+          // event channel. They are intentionally available even though the
+          // receiver has no keyboard runtime log configuration.
+          logs: true,
           reset: false,
           explicitSave: false,
           wireless: false,

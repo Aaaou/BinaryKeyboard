@@ -439,20 +439,27 @@ export function parseReceiveFrame(frame: Uint8Array): {
         const kbType = KEYBOARD_TYPE_NAMES[data[11]] || `未知(${data[11]})`;
         const keyCount = data[12];
         const fnCount = data[13];
-        parsed += ` | VID=${hex(vid)} PID=${hex(pid)} v${ver} | ${kbType} ${keyCount}键 ${fnCount}FN | ${maxLayers}层 ${macros}宏`;
+        if (data.length >= 16 && data[15] === 1) {
+          parsed += ` | VID=${hex(vid)} PID=${hex(pid)} v${ver} | CH592F 2.4G 接收器 | USB 管理通道`;
+        } else {
+          parsed += ` | VID=${hex(vid)} PID=${hex(pid)} v${ver} | ${kbType} ${keyCount}键 ${fnCount}FN | ${maxLayers}层 ${macros}宏`;
+        }
       }
       break;
 
     case Command.SYS_STATUS:
       if (len >= 6) {
-        const mode = data[1] === 0 ? "USB" : "BLE";
+        const receiver = len >= 9 && data[1] === 2;
+        const mode = receiver ? "2.4G 接收器" : data[1] === 0 ? "USB" : "BLE";
         const connectionStates = ["未连接", "广播中", "已连接", "挂起"];
         const conn = connectionStates[data[2]] ?? `未知状态(${data[2]})`;
         const layer = data[3];
         const battery = data[4];
         const charging = data[5] ? "充电中" : "未充电";
-        parsed += ` | ${mode} ${conn} | 层${layer + 1} | 电量 ${battery}% ${charging}`;
-        if (len >= 9) {
+        parsed += receiver
+          ? ` | ${mode} ${conn} | 启动阶段 ${data[6]}`
+          : ` | ${mode} ${conn} | 层${layer + 1} | 电量 ${battery}% ${charging}`;
+        if (len >= 9 && !receiver) {
           const adcRaw = data[6] | (data[7] << 8);
           const chargePinRaw = data[8];
           parsed += ` | ADC原始值 ${adcRaw} | CHRG原始值 ${chargePinRaw}`;
