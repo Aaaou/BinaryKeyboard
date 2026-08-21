@@ -7,6 +7,7 @@ int Receiver_Radio_Init(void);
 uint8_t Receiver_Radio_GetHostStartupState(void);
 uint8_t Receiver_Radio_GetHostStartupResult(void);
 void Receiver_Radio_RfLibraryInit(void);
+void Receiver_Radio_TmosInit(void);
 void Receiver_Radio_Process(void);
 int Receiver_Radio_StartPairing(void);
 int Receiver_Radio_CancelPairing(void);

@@ -24,6 +24,10 @@ int main(void)
     Receiver_Log_SetCompletedStage(0u);
 
 #if KBD_RECEIVER_STARTUP_STAGE >= 1
+    /* WCH RF Host requires TMOS task/message storage before HAL_TimeInit and
+     * RFBound_StartHost.  The RF-only keyboard gets this from its BLE task
+     * scheduler; the standalone USB receiver must provide it explicitly. */
+    Receiver_Radio_TmosInit();
     Receiver_Log_Event(RX_LOG_TIME_INIT_BEGIN, KBD_RECEIVER_STARTUP_STAGE, 0u);
     HAL_TimeInit();
     Receiver_Log_Event(RX_LOG_TIME_INIT_OK, KBD_RECEIVER_STARTUP_STAGE, 0u);

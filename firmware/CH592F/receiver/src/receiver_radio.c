@@ -79,12 +79,38 @@ static mouse_queue_t s_mouse_queue;
 static consumer_queue_t s_consumer_queue;
 static rfRoleList_t s_speed_item;
 static rfRoleSpeed_t s_speed_list = {1, &s_speed_item};
+/* WCH's RF Host uses TMOS task/message memory after RFBound_StartHost(). */
+static __attribute__((aligned(4))) uint8_t s_tmos_memory[1024];
 static volatile uint8_t s_host_startup_state;
 static volatile uint8_t s_host_startup_result;
 static bool s_host_active;
 static bool s_boot_host_pending;
 static uint32_t s_boot_host_due;
 extern RF_DMADESCTypeDef *pDMARxGet;
+
+static void receiver_tmos_enable_irq(void)
+{
+    PFIC_EnableIRQ(BLEL_IRQn);
+    PFIC_EnableIRQ(RTC_IRQn);
+}
+
+static void receiver_tmos_disable_irq(void)
+{
+    PFIC_DisableIRQ(BLEL_IRQn);
+    PFIC_DisableIRQ(RTC_IRQn);
+}
+
+void Receiver_Radio_TmosInit(void)
+{
+    tmosConfig_t config;
+    memset(&config, 0, sizeof(config));
+    config.MEMAddr = (uint32_t)s_tmos_memory;
+    config.MEMLen = sizeof(s_tmos_memory);
+    config.TaskMaxCount = 8u;
+    config.enableTmosIrq = receiver_tmos_enable_irq;
+    config.disableTmosIrq = receiver_tmos_disable_irq;
+    TMOS_Init(&config);
+}
 
 static bool valid_poll_rate(uint16_t rate)
 {
