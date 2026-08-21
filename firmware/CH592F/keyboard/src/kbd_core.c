@@ -10,6 +10,7 @@
 #include "kbd_storage.h"
 #include "kbd_macro.h"
 #include "kbd_rgb.h"
+#include "kbd_radio_2g4.h"
 #include "kbd_mode.h"
 #include "kbd_log.h"
 #include "hal_utils.h"
@@ -846,9 +847,7 @@ static void ExecuteFnAction(kbd_fn_action_t action, uint8_t param)
         break;
 
     case KBD_FN_2G4_PAIR:
-        /* RF-enabled builds replace this guard with their pairing entry point. */
-        LOG_W(TAG, "FN: 2.4G pairing unavailable in this build");
-        KBD_RGB_Flash(255, 0, 0, 200);
+        if (KBD_Radio2G4_StartPairing() != 0) KBD_RGB_Flash(255, 0, 0, 200);
         break;
 
     /* 宏 */

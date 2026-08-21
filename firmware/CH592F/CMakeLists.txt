@@ -28,6 +28,7 @@ set(KBD_NAME_PREFIX "BinaryKeyboard" CACHE STRING "Keyboard name prefix")
 set(KBD_MODEL "AUTO" CACHE STRING "Keyboard model suffix for device name (AUTO uses KEYBOARD)")
 set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "Override full USB/BLE device name, empty means auto compose")
 option(KBD_SLEEP_TEST_MODE "Enable visible idle/sleep timing indicators" OFF)
+option(KBD_RADIO_2G4_ENABLED "Enable validated CH592F RF FAST backend" OFF)
 string(TOUPPER "${KEYBOARD}" KEYBOARD_UPPER)
 string(TOUPPER "${KBD_MODEL}" KBD_MODEL_UPPER_RAW)
 
@@ -107,6 +108,7 @@ set(CH592_BLE_HID_SOURCES
     ble/hid/src/ble_hid.c
     ble/hid/src/ble_hid_service.c
     ble/hid/src/kbd_mode.c
+    ble/hid/src/kbd_radio_2g4.c
 )
 
 set(CH592_BLE_PROFILE_SOURCES
@@ -214,6 +216,10 @@ else()
         KBD_USB_LOG_ENABLE=0
         KBD_LOG_DEFAULT_ENABLED=0
     )
+endif()
+
+if(KBD_RADIO_2G4_ENABLED)
+    list(APPEND CH592_COMPILE_DEFINITIONS KBD_RADIO_2G4_ENABLED=1)
 endif()
 
 if(KBD_SLEEP_TEST_MODE)

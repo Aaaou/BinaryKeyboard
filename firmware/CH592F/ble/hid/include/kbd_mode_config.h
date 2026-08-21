@@ -24,7 +24,7 @@ extern "C"
     {
         KBD_WORK_MODE_USB = 0, /**< USB 有线模式 */
         KBD_WORK_MODE_BLE = 1, /**< 蓝牙无线模式 */
-        /* KBD_WORK_MODE_2G4 = 2,   预留：2.4G 无线模式 */
+        KBD_WORK_MODE_2G4 = 2,  /**< 2.4G 无线模式（需 RF-enabled 构建） */
     } kbd_work_mode_t;
 
     /*============================================================================*/
@@ -51,6 +51,10 @@ extern "C"
 
 /** USB 插入时自动切换到 USB 模式（默认启用，开机即为 USB 模式） */
 #define KBD_AUTO_SWITCH_TO_USB_ON_PLUG 1
+
+#ifndef KBD_RADIO_2G4_ENABLED
+#define KBD_RADIO_2G4_ENABLED 0
+#endif
 
 /*============================================================================*/
 /* 蓝牙配置 */

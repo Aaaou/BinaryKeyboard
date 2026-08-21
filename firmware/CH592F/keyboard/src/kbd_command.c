@@ -21,6 +21,8 @@
 #include "kbd_mode.h"
 #include "kbd_rgb.h"
 #include "kbd_log.h"
+#include "kbd_radio_2g4.h"
+#include "kbd_mode_config.h"
 #include "kbd_storage.h"
 #include "key.h"
 #include "iap_config.h"
@@ -49,6 +51,8 @@ extern void USB_Config_SendResponse(uint8_t cmd, uint8_t *data, uint8_t len);
 static void HandleSysInfo(const kbd_cmd_frame_t *frame);
 static void HandleSysStatus(const kbd_cmd_frame_t *frame);
 static void HandleRadioCaps(const kbd_cmd_frame_t *frame);
+static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame);
+static void HandleRadioPairAction(const kbd_cmd_frame_t *frame);
 static void HandleCfgSave(const kbd_cmd_frame_t *frame);
 static void HandleCfgLoad(const kbd_cmd_frame_t *frame);
 static void HandleCfgReset(const kbd_cmd_frame_t *frame);
@@ -99,15 +103,14 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
     HandleRadioCaps(frame);
     break;
   case KBD_CMD_RADIO_PAIR_STATUS:
+    HandleRadioPairStatus(frame);
+    break;
   case KBD_CMD_RADIO_PAIR_START:
   case KBD_CMD_RADIO_PAIR_CANCEL:
   case KBD_CMD_RADIO_PAIR_CLEAR:
   case KBD_CMD_RADIO_POLL_RATE_GET:
   case KBD_CMD_RADIO_POLL_RATE_SET:
-    {
-      uint8_t resp[1] = {KBD_RESP_ERR_INVALID};
-      KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
-    }
+    HandleRadioPairAction(frame);
     break;
 
   /* 配置管理 */
@@ -323,9 +326,29 @@ static void HandleSysStatus(const kbd_cmd_frame_t *frame)
  */
 static void HandleRadioCaps(const kbd_cmd_frame_t *frame)
 {
-  uint8_t resp[4] = {KBD_RESP_OK, 0, 0, 0};
+  uint8_t resp[12] = {KBD_RESP_OK, KBD_RADIO_2G4_ENABLED ? 1 : 0,
+                      KBD_RADIO_2G4_ENABLED ? 0 : 0, 4,
+                      0x7D, 0x00, 0xFA, 0x00, 0xF4, 0x01, 0xE8, 0x03};
   (void)frame;
   KBD_Command_SendResponse(KBD_CMD_RADIO_CAPS, 0, resp, sizeof(resp));
+}
+
+static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame)
+{
+  uint8_t resp[8] = {KBD_RESP_OK, (uint8_t)KBD_Radio2G4_GetPairState(), 0, 0, 0, 0, 0, 0};
+  (void)frame;
+  KBD_Command_SendResponse(KBD_CMD_RADIO_PAIR_STATUS, 0, resp, sizeof(resp));
+}
+
+static void HandleRadioPairAction(const kbd_cmd_frame_t *frame)
+{
+  int ret = -1;
+  if (frame->cmd == KBD_CMD_RADIO_PAIR_START) ret = KBD_Radio2G4_StartPairing();
+  else if (frame->cmd == KBD_CMD_RADIO_PAIR_CANCEL) ret = KBD_Radio2G4_CancelPairing();
+  else if (frame->cmd == KBD_CMD_RADIO_PAIR_CLEAR) ret = KBD_Radio2G4_ClearPairing(frame->sub != 0);
+  else ret = -1;
+  uint8_t resp[1] = {(ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_INVALID};
+  KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
 }
 
 /**

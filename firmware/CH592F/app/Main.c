@@ -104,7 +104,8 @@ int main(void)
 
     /* 读取上次模式，决定本次启动路径 */
     uint8_t last_mode = KBD_GetLastMode();
-    kbd_work_mode_t initial_mode = (last_mode == 1) ? KBD_WORK_MODE_BLE : KBD_WORK_MODE_USB;
+    kbd_work_mode_t initial_mode = (last_mode <= KBD_WORK_MODE_2G4)
+        ? (kbd_work_mode_t)last_mode : KBD_WORK_MODE_USB;
 
     /*
      * 按 WCH Application 示例思路：每种模式只初始化对应协议栈
