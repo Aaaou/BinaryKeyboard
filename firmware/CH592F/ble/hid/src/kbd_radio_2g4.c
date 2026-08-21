@@ -16,6 +16,7 @@
 /* Keep the application heartbeat comfortably below the RFBound transaction
  * timeout.  A 1 s interval was longer than the old 500 ms library window. */
 #define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
+#define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -33,8 +34,14 @@ static uint32_t s_session;
 static uint32_t s_sequence;
 static uint32_t s_last_keepalive;
 static bool s_initialized;
-static uint32_t s_led_tick;
-static bool s_led_phase;
+/* Pairing is transactional: keep the previous profile until the new
+ * RFBound transaction has completed successfully.  This mirrors the
+ * profile/bond behavior used by mature wireless keyboard stacks. */
+static uint8_t s_pair_backup_peer[6];
+static uint8_t s_pair_backup_device_id;
+static bool s_pair_backup_valid;
+static uint32_t s_pair_started;
+static bool s_pair_restore_pending;
 extern RF_DMADESCTypeDef *pDMATxGet;
 
 static void kbd_tmos_enable_irq(void)
@@ -103,6 +110,7 @@ static void rf_bound_cb(staBound_t *status)
         s_device_id = status->devId;
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         rf_nv_save();
+        s_pair_backup_valid = false;
         /* RFBound SUCCESS means the binding transaction completed. It does
          * not prove that an application HID frame has reached the receiver. */
         s_state = KBD_RADIO_PAIR_BOUND;
@@ -110,9 +118,16 @@ static void rf_bound_cb(staBound_t *status)
     } else if (status->status == bleTimeout) {
         /* RFBound timeout only denotes an internal transaction retry.  Do not
          * turn it into a visible link failure or stop application keepalive. */
-        s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-        if (rf_has_peer()) KBD_RGB_Flash(180, 120, 0, 250);
+        /* bleTimeout is an RFBound retry indication, not a final pairing
+         * failure. Keep the explicit pairing window alive. */
+        s_state = KBD_RADIO_PAIRING;
     } else {
+        if (s_pair_backup_valid) {
+            memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
+            s_device_id = s_pair_backup_device_id;
+            s_pair_backup_valid = false;
+        }
+        s_pair_restore_pending = true;
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         KBD_RGB_Flash(180, 0, 0, 1500);
     }
@@ -129,7 +144,7 @@ static void rf_irq_cb(rfRole_States_t status, uint8_t id)
     }
 }
 
-static int rf_start(void)
+static int rf_start(bool pairing)
 {
     rfBoundDevice_t bound;
     memset(&bound, 0, sizeof(bound));
@@ -142,8 +157,11 @@ static int rf_start(void)
     memcpy(bound.OwnInfo, s_local_id, sizeof(s_local_id));
     memcpy(bound.PeerInfo, s_peer_id, sizeof(s_peer_id));
     bound.rfBoundCB = rf_bound_cb;
-    s_state = KBD_RADIO_PAIRING;
-    KBD_RGB_Flash(0, 0, 180, 60000);
+    s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
+    if (pairing) {
+        s_pair_started = RTC_GetCycle32k();
+        KBD_RGB_Flash(0, 0, 180, 60000);
+    }
     return RFBound_StartDevice(&bound) == SUCCESS ? 0 : -1;
 }
 
@@ -187,7 +205,7 @@ int KBD_Radio2G4_Init(void)
     // every power-up. Wait for the explicit web pairing command instead; a
     // previously bound keyboard may reconnect automatically.
     if (rf_has_peer()) {
-        return rf_start();
+        return rf_start(false);
     }
     s_state = KBD_RADIO_PAIR_UNBOUND;
     KBD_RGB_Flash(0, 0, 180, 400);
@@ -197,18 +215,40 @@ void KBD_Radio2G4_Stop(void) { if (s_initialized) RFRole_Shut(); s_initialized =
 int KBD_Radio2G4_StartPairing(void)
 {
     if (!s_initialized) return -1;
-    RFRole_Shut(); memset(s_peer_id, 0, sizeof(s_peer_id)); s_device_id = KBD_RF_KEYBOARD_ID;
-    return rf_start();
+    RFRole_Shut();
+    memcpy(s_pair_backup_peer, s_peer_id, sizeof(s_peer_id));
+    s_pair_backup_device_id = s_device_id;
+    s_pair_backup_valid = rf_has_peer();
+    memset(s_peer_id, 0, sizeof(s_peer_id));
+    s_device_id = KBD_RF_KEYBOARD_ID;
+    int result = rf_start(true);
+    if (result != 0) {
+        if (s_pair_backup_valid) {
+            memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
+            s_device_id = s_pair_backup_device_id;
+            s_pair_backup_valid = false;
+            s_state = KBD_RADIO_PAIR_BOUND;
+            rf_start(false);
+        } else {
+            s_state = KBD_RADIO_PAIR_UNBOUND;
+        }
+    }
+    return result;
 }
 int KBD_Radio2G4_CancelPairing(void)
 {
     if (!s_initialized || s_state != KBD_RADIO_PAIRING) return -1;
     RFRole_Shut();
-    memset(s_peer_id, 0, sizeof(s_peer_id));
-    s_device_id = KBD_RF_KEYBOARD_ID;
+    if (s_pair_backup_valid) {
+        memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
+        s_device_id = s_pair_backup_device_id;
+        s_pair_backup_valid = false;
+    } else {
+        memset(s_peer_id, 0, sizeof(s_peer_id));
+        s_device_id = KBD_RF_KEYBOARD_ID;
+    }
     s_state = KBD_RADIO_PAIR_UNBOUND;
-    rf_nv_load();
-    return rf_has_peer() ? rf_start() : 0;
+    return rf_has_peer() ? rf_start(false) : 0;
 }
 int KBD_Radio2G4_ClearPairing(bool force)
 {
@@ -250,17 +290,27 @@ int KBD_Radio2G4_SendConsumerReport(uint16_t key)
 }
 void KBD_Radio2G4_Process(void)
 {
+    /* Do not write WS2812 here.  The RGB scheduler owns the strip and maps
+     * the radio state to the dedicated indicator LED, preventing two
+     * independent loops from fighting over LED0/LED1 during pairing. */
     if (s_state == KBD_RADIO_PAIRING) {
-        uint32_t now = RTC_GetCycle32k();
-        if ((uint32_t)(now - s_led_tick) >= 16384u) {
-            s_led_tick = now;
-            s_led_phase = !s_led_phase;
-            WS2812_Set_Indicator(s_led_phase ? 0 : 0,
-                                 s_led_phase ? 0 : 0,
-                                 s_led_phase ? 180 : 0);
-            WS2812_Update();
+        if (rf_rtc_elapsed(RTC_GetCycle32k(), s_pair_started) >= KBD_RF_PAIR_WINDOW_TICKS) {
+            RFRole_Shut();
+            if (s_pair_backup_valid) {
+                memcpy(s_peer_id, s_pair_backup_peer, sizeof(s_peer_id));
+                s_device_id = s_pair_backup_device_id;
+                s_pair_backup_valid = false;
+                s_state = KBD_RADIO_PAIR_BOUND;
+                rf_start(false);
+            } else {
+                s_state = KBD_RADIO_PAIR_UNBOUND;
+            }
         }
         return;
+    }
+    if (s_pair_restore_pending) {
+        s_pair_restore_pending = false;
+        if (rf_has_peer()) rf_start(false);
     }
     /* A bound device may briefly lose the Host callback before the next
      * packet arrives. Continue keepalive in BOUND state so the RF library can
