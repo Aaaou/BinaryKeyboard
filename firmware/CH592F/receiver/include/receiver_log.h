@@ -16,6 +16,9 @@
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);
+/* Last lifecycle checkpoint which actually returned at runtime. */
+void Receiver_Log_SetCompletedStage(uint8_t stage);
+uint8_t Receiver_Log_GetCompletedStage(void);
 void Receiver_Log_MarkHostSeen(void);
 /* Removes one retained lifecycle record. Returns 1 when an entry was read. */
 uint8_t Receiver_Log_Pop(uint8_t *event, uint8_t *stage, uint8_t *result);

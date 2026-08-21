@@ -16,12 +16,24 @@ static receiver_log_entry_t s_queue[RX_LOG_QUEUE_SIZE];
 static volatile uint8_t s_head;
 static volatile uint8_t s_tail;
 static volatile uint8_t s_host_seen;
+static volatile uint8_t s_completed_stage;
 
 void Receiver_Log_Init(void)
 {
     s_head = 0u;
     s_tail = 0u;
     s_host_seen = 0u;
+    s_completed_stage = 0u;
+}
+
+void Receiver_Log_SetCompletedStage(uint8_t stage)
+{
+    s_completed_stage = stage;
+}
+
+uint8_t Receiver_Log_GetCompletedStage(void)
+{
+    return s_completed_stage;
 }
 
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result)
