@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include "kbd_radio_2g4.h"
 int Receiver_Radio_Init(void);
+/* Host startup diagnostic: 0=not attempted, 1=calling, 2=started, 3=failed. */
+uint8_t Receiver_Radio_GetHostStartupState(void);
+uint8_t Receiver_Radio_GetHostStartupResult(void);
 void Receiver_Radio_RfLibraryInit(void);
 void Receiver_Radio_Process(void);
 int Receiver_Radio_StartPairing(void);

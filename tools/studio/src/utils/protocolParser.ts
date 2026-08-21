@@ -456,8 +456,9 @@ export function parseReceiveFrame(frame: Uint8Array): {
         const layer = data[3];
         const battery = data[4];
         const charging = data[5] ? "充电中" : "未充电";
-        parsed += receiver
-          ? ` | ${mode} ${conn} | 启动阶段 ${data[6]}`
+          const hostStates = ['未尝试', '启动中', '已启动', '启动失败'];
+          parsed += receiver
+            ? ` | ${mode} ${conn} | 启动阶段 ${data[6]} | Host ${hostStates[data[7]] ?? `未知(${data[7]})`}${data[8] ? `(${hex(data[8])})` : ''}`
           : ` | ${mode} ${conn} | 层${layer + 1} | 电量 ${battery}% ${charging}`;
         if (len >= 9 && !receiver) {
           const adcRaw = data[6] | (data[7] << 8);

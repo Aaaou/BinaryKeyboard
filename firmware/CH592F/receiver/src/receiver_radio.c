@@ -78,6 +78,8 @@ static mouse_queue_t s_mouse_queue;
 static consumer_queue_t s_consumer_queue;
 static rfRoleList_t s_speed_item;
 static rfRoleSpeed_t s_speed_list = {1, &s_speed_item};
+static volatile uint8_t s_host_startup_state;
+static volatile uint8_t s_host_startup_result;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static bool valid_poll_rate(uint16_t rate)
@@ -198,16 +200,24 @@ static int start_host(bool pairing)
     host.periTime = 8;
     host.hop = RF_HOP_MANUF_MODE;
     host.timeout = 100;
-    host.devType = RX_KEYBOARD_DEVICE_TYPE;
+    /* WCH marks the Host devType field as reserved. Device type filtering
+     * belongs exclusively to rfRoleList_t, configured by apply_filter(). */
+    host.devType = 0u;
     memcpy(host.OwnInfo, s_local, sizeof(s_local));
     if (!pairing) memcpy(host.PeerInfo, s_nv.peer, sizeof(s_nv.peer));
     host.rfBoundCB = bound_cb;
     if (pairing) s_pair_started = RTC_GetCycle32k();
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
-    if (RFBound_StartHost(&host) != SUCCESS) {
+    s_host_startup_state = 1u;
+    s_host_startup_result = 0u;
+    bStatus_t result = RFBound_StartHost(&host);
+    s_host_startup_result = (uint8_t)result;
+    if (result != SUCCESS) {
+        s_host_startup_state = 3u;
         s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         return -1;
     }
+    s_host_startup_state = 2u;
     return 0;
 }
 
@@ -443,8 +453,13 @@ void Receiver_Radio_RfLibraryInit(void)
     load_nv();
     GetMACAddress(s_local);
     s_last_usb_report = RTC_GetCycle32k();
+    s_host_startup_state = 0u;
+    s_host_startup_result = 0u;
     RF_LibInit(irq_cb);
 }
+
+uint8_t Receiver_Radio_GetHostStartupState(void) { return s_host_startup_state; }
+uint8_t Receiver_Radio_GetHostStartupResult(void) { return s_host_startup_result; }
 
 void Receiver_Radio_Process(void)
 {

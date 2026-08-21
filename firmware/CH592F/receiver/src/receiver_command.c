@@ -54,6 +54,8 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[2]=(Receiver_Radio_GetState()==KBD_RADIO_PAIR_CONNECTED) ? KBD_CONN_CONNECTED : KBD_CONN_DISCONNECTED;
         /* Report the last initialization checkpoint actually reached. */
         resp[6]=Receiver_Log_GetCompletedStage();
+        resp[7]=Receiver_Radio_GetHostStartupState();
+        resp[8]=Receiver_Radio_GetHostStartupResult();
         len=9; break;
     case KBD_CMD_LOG_GET:
         /* Receiver-only: read one retained boot diagnostic.

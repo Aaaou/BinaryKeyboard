@@ -60,6 +60,8 @@ describe('CH592 receiver system status', () => {
 
     expect(status.workMode).toBe(2);
     expect(status.receiverStartupStage).toBe(1);
+    expect(status.receiverHostStartupState).toBe(0);
+    expect(status.receiverHostStartupResult).toBe(0);
     expect(status.adcRaw).toBeUndefined();
   });
 });

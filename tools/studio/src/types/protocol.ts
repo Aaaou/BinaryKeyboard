@@ -478,6 +478,9 @@ export interface DeviceStatus {
   chargePinRaw?: number;
   /** Receiver-only staged startup diagnostic (0=USB, 1=time, 2=RF library, 3=RF host). */
   receiverStartupStage?: number;
+  /** Receiver-only RFBound_StartHost diagnostic state. */
+  receiverHostStartupState?: number;
+  receiverHostStartupResult?: number;
 }
 
 /** HID 命令帧 */

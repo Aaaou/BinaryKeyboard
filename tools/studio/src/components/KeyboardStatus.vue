@@ -54,6 +54,16 @@
         </div>
       </div>
 
+      <div v-if="isReceiver" class="status-card diagnostic-card wide">
+        <div class="status-icon">
+          <i class="pi pi-sitemap"></i>
+        </div>
+        <div class="status-content">
+          <span class="status-label">RF Host</span>
+          <span class="status-value">{{ receiverHostLabel }}</span>
+        </div>
+      </div>
+
       <!-- RGB 状态 -->
       <div v-if="supportsRgb" class="status-card rgb-card">
         <div class="status-icon">
@@ -162,6 +172,17 @@ const receiverStageLabel = computed(() => {
     2: '阶段 2 · RF 库',
     3: '阶段 3 · RF Host',
   } as Record<number, string>)[stage] ?? `未知阶段 ${stage}`;
+});
+
+const receiverHostLabel = computed(() => {
+  const status = deviceStore.deviceStatus;
+  const state = status?.receiverHostStartupState;
+  if (state === undefined) return '等待状态响应';
+  const labels: Record<number, string> = {
+    0: '未尝试', 1: '正在调用官方 Host API', 2: '已启动', 3: '启动失败',
+  };
+  const label = labels[state] ?? `未知状态 ${state}`;
+  return status?.receiverHostStartupResult ? `${label} · 0x${status.receiverHostStartupResult.toString(16).padStart(2, '0').toUpperCase()}` : label;
 });
 
 // RGB 状态

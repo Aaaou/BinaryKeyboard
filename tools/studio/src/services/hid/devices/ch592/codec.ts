@@ -235,6 +235,8 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     // wire-format decision depend on cached capabilities.
     if (status.workMode === 2 && resp.getUint8(2) >= 9) {
       status.receiverStartupStage = resp.getUint8(d + 6);
+      status.receiverHostStartupState = resp.getUint8(d + 7);
+      status.receiverHostStartupResult = resp.getUint8(d + 8);
     } else if (resp.getUint8(2) >= 9) {
       status.adcRaw = resp.getUint16(d + 6, true);
       status.chargePinRaw = resp.getUint8(d + 8);
