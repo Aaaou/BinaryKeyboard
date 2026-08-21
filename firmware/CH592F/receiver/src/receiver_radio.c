@@ -14,12 +14,10 @@
 #define RX_PAIR_WINDOW_TICKS (60u * 32768u)
 #define RX_KEYBOARD_DEVICE_TYPE 1u
 #define RX_REPORT_QUEUE_DEPTH 16u
-/* RF host callbacks can be delayed by USB management traffic and channel
- * hopping. Keep the application link alive across a few missed intervals;
- * the RF library still performs the real peer timeout. */
-/* A keyboard heartbeat arrives every 100 ms. Five missed heartbeats balance
- * prompt stuck-key release with RF scheduling and channel-hop jitter. */
-#define RX_LINK_TIMEOUT_TICKS (32768u / 2u)
+/* Match WCH's RF_REPORT_DISCONNECT_DELAY (160 * 4 TMOS ticks, about 400 ms).
+ * The receiver must then send all-zero HID reports so the USB host cannot
+ * retain a key-down state after the radio peer has disappeared. */
+#define RX_LINK_TIMEOUT_TICKS ((32768u * 400u) / 1000u)
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;

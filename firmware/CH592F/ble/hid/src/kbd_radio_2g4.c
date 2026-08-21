@@ -17,9 +17,6 @@
  * timeout.  A 1 s interval was longer than the old 500 ms library window. */
 #define KBD_RF_KEEPALIVE_TICKS 3277u /* about 100 ms at 32.768 kHz */
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
-/* Keyboard reports are absolute state. A deep FIFO increases release
- * latency without adding reliability, so retain headroom in WCH's ring. */
-#define KBD_RF_APP_TX_LIMIT 4u
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -203,11 +200,13 @@ static int rf_send(const uint8_t *data, uint8_t len)
 {
     uint32_t irq;
     SYS_DisableAllIrq(&irq);
-    uint8_t busy = 0u;
-    for (uint8_t i = 0u; i < RF_TXBUFNB; i++) {
-        if ((DMATxDscrTab[i].Status & STA_DMA_ENABLE) != 0u) busy++;
-    }
-    if (busy >= KBD_RF_APP_TX_LIMIT || (pDMATxGet->Status & STA_DMA_ENABLE)) {
+    RF_DMADESCTypeDef *next = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
+    /* WCH's reference trans.c applies this exact capacity rule: the current
+     * application descriptor and its successor must both be free. Keeping
+     * the successor reserved prevents application HID/heartbeat traffic from
+     * consuming the RF library's communication headroom. */
+    if ((pDMATxGet->Status & STA_DMA_ENABLE) != 0u ||
+        (next->Status & STA_DMA_ENABLE) != 0u) {
         s_tx_busy++;
         SYS_RecoverIrq(irq);
         return -1;
@@ -401,12 +400,10 @@ void KBD_Radio2G4_Process(void)
     if (s_state != KBD_RADIO_PAIR_CONNECTED) return;
     uint32_t now = RTC_GetCycle32k();
     if (rf_rtc_elapsed(now, s_last_keepalive) < KBD_RF_KEEPALIVE_TICKS) return;
-    /* WCH normally keeps several descriptors in its RF pipeline, so waiting
-     * for an entirely empty ring can suppress every heartbeat during a held
-     * key. Allow bounded keepalives while reserving one application slot for
-     * the next key transition (especially release). */
-    if (KBD_Radio2G4_GetTxDescriptorsBusy() < (KBD_RF_APP_TX_LIMIT - 1u) &&
-        rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
+    /* rf_send() uses WCH's one-reserved-descriptor rule. Do not add a second,
+     * arbitrary occupancy threshold here: a normally pipelined connection
+     * must still be able to send heartbeats while a key remains held. */
+    if (rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
         s_last_keepalive = now;
     }
 }
