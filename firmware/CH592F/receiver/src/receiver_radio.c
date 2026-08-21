@@ -2,6 +2,7 @@
 #include "kbd_radio_protocol.h"
 #include "usb_device.h"
 #include "usb_hid.h"
+#include "receiver_log.h"
 #include "RF.h"
 #include "CH59x_common.h"
 #include <string.h>
@@ -81,6 +82,8 @@ static rfRoleSpeed_t s_speed_list = {1, &s_speed_item};
 static volatile uint8_t s_host_startup_state;
 static volatile uint8_t s_host_startup_result;
 static bool s_host_active;
+static bool s_boot_host_pending;
+static uint32_t s_boot_host_due;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static bool valid_poll_rate(uint16_t rate)
@@ -457,7 +460,15 @@ static int request_control(receiver_control_t control, uint16_t rate)
 
 int Receiver_Radio_Init(void)
 {
-    return start_host(!has_peer());
+    /* WCH's reference dongle queues RFBound_StartHost from its TMOS task.
+     * Keep RF library setup and Host role startup in separate main-loop
+     * turns so USB enumeration/management is not interrupted by the first
+     * RF timer/channel setup. */
+    s_boot_host_pending = true;
+    s_boot_host_due = RTC_GetCycle32k() + 3277u; /* 100 ms at 32.768 kHz */
+    s_host_startup_state = 0u;
+    s_host_startup_result = 0u;
+    return 0;
 }
 
 void Receiver_Radio_RfLibraryInit(void)
@@ -468,6 +479,8 @@ void Receiver_Radio_RfLibraryInit(void)
     s_host_startup_state = 0u;
     s_host_startup_result = 0u;
     s_host_active = false;
+    s_boot_host_pending = false;
+    s_boot_host_due = 0u;
     RF_LibInit(irq_cb);
 }
 
@@ -478,6 +491,15 @@ void Receiver_Radio_Process(void)
 {
     process_binding_save();
     process_control();
+    if (s_boot_host_pending &&
+        rtc_elapsed(RTC_GetCycle32k(), s_boot_host_due) < 0x80000000u) {
+        s_boot_host_pending = false;
+        Receiver_Log_Event(RX_LOG_HOST_INIT_BEGIN, KBD_RECEIVER_STARTUP_STAGE, 0u);
+        int result = start_host(!has_peer());
+        Receiver_Log_Event(result == 0 ? RX_LOG_HOST_INIT_OK : RX_LOG_HOST_INIT_FAIL,
+                           KBD_RECEIVER_STARTUP_STAGE, (uint8_t)result);
+        if (result == 0) Receiver_Log_SetCompletedStage(3u);
+    }
     /* RF_LibInit has completed, but there is no active descriptor role before
      * RFBound_StartHost succeeds.  Keep the manual diagnostic boot path
      * identical to the validated stage-2 path until pairing is requested. */
