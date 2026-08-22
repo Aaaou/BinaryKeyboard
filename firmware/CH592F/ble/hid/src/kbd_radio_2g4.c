@@ -13,8 +13,13 @@
 #define KBD_RF_BIND_MAGIC 0x3244424Bu
 #define KBD_RF_DEVICE_TYPE 1u
 #define KBD_RF_KEYBOARD_ID 0u
+/* Keep the RFBound transaction alive while an idle keyboard has no HID edge.
+ * This is transport traffic only: it never enters a USB report queue. */
+#define KBD_RF_KEEPALIVE_TICKS ((32768u * 100u) / 1000u)
+#define KBD_RF_APP_TX_LIMIT 4u
 /* Allow RFBound's delayed-disconnect path to settle before updating the
- * application-visible state. Application traffic is not a link watchdog. */
+ * application-visible state. Application traffic is not the only link
+ * watchdog, but it gives the receiver a bounded stuck-key failsafe. */
 #define KBD_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
 #define KBD_RF_FAILURE_FLASH_TICKS ((32768u * 300u) / 1000u)
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
@@ -33,6 +38,7 @@ static uint8_t s_local_id[6], s_peer_id[6], s_device_id = KBD_RF_KEYBOARD_ID;
 static __attribute__((aligned(4))) uint8_t s_tmos_memory[1024];
 static uint32_t s_session;
 static uint32_t s_sequence;
+static volatile uint32_t s_last_keepalive;
 static bool s_initialized;
 /* Pairing is transactional: keep the previous profile until the new
  * RFBound transaction has completed successfully.  This mirrors the
@@ -142,6 +148,12 @@ static void rf_bound_cb(staBound_t *status)
          * application keepalives are intentionally paused. */
         s_manual_pairing = false;
         s_rf_ready = true;
+        /* Send the first keepalive immediately after RFBound confirms the
+         * session; do not wait for a full interval during reconnect. */
+        uint32_t now = RTC_GetCycle32k();
+        s_last_keepalive = now >= KBD_RF_KEEPALIVE_TICKS
+            ? now - KBD_RF_KEEPALIVE_TICKS
+            : RTC_MAX_COUNT - (KBD_RF_KEEPALIVE_TICKS - now);
         s_disconnect_pending = false;
         s_rf_restart_pending = false;
         s_failure_indicated = false;
@@ -254,6 +266,7 @@ int KBD_Radio2G4_Init(void)
                 ((uint32_t)s_local_id[3] << 16) ^
                 ((uint32_t)s_local_id[4] << 8) ^ s_local_id[5];
     if (s_session == 0u) s_session = 1u;
+    s_last_keepalive = RTC_GetCycle32k();
     rf_nv_load();
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
@@ -467,8 +480,16 @@ void KBD_Radio2G4_Process(void)
         s_disconnect_pending = false;
         s_state = rf_has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
     }
-    /* RFBound owns idle supervision. Absence of new application HID frames is
-     * normal for a keyboard and must never be treated as a disconnected link. */
+    /* An idle keyboard still emits a transport keepalive. Reserve one RF DMA
+     * descriptor for a real key transition so a held key can always release. */
+    if (s_state == KBD_RADIO_PAIR_CONNECTED) {
+        uint32_t now = RTC_GetCycle32k();
+        if (rf_rtc_elapsed(now, s_last_keepalive) >= KBD_RF_KEEPALIVE_TICKS &&
+            KBD_Radio2G4_GetTxDescriptorsBusy() < (KBD_RF_APP_TX_LIMIT - 1u) &&
+            rf_send_frame(KBD_RADIO_FRAME_KEEPALIVE, NULL, 0u) == 0) {
+            s_last_keepalive = now;
+        }
+    }
 }
 
 #else

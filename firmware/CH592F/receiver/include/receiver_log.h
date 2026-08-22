@@ -23,6 +23,7 @@
 #define RX_LOG_HID_RELEASE_QUEUED   0x90u
 #define RX_LOG_HID_RELEASE_SENT     0x91u
 #define RX_LOG_HID_RELEASE_BUSY     0x92u
+#define RX_LOG_APP_LINK_TIMEOUT     0x93u
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);
