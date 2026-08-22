@@ -29,7 +29,7 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data, uin
 }
 int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 {
-    uint8_t resp[48] = { KBD_RESP_OK };
+    uint8_t resp[52] = { KBD_RESP_OK };
     int ret = 0; uint8_t len = 1;
     Receiver_Log_MarkHostSeen();
     if (s_deferred_response &&
@@ -72,7 +72,7 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         /* [OK][state][role][device id][peer id][local 6][peer 6]
          * [fingerprint 4][generation 4][last valid age 4]
          * [link timeout age 4][release queued age 4][release sent age 4]
-         * [release busy count 2]. The first 31 bytes remain compatible with
+         * [release busy count 2][last RF activity age 4]. The first 31 bytes remain compatible with
          * protocol v1 clients. */
         uint32_t v;
         resp[1]=(uint8_t)Receiver_Radio_GetState();
@@ -107,7 +107,10 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[41]=(uint8_t)(v>>16); resp[42]=(uint8_t)(v>>24);
         v = Receiver_Radio_GetReleaseBusyCount();
         resp[43]=(uint8_t)v; resp[44]=(uint8_t)(v>>8);
-        len=45; break;
+        v = Receiver_Radio_GetLastRfActivityAge();
+        resp[45]=(uint8_t)v; resp[46]=(uint8_t)(v>>8);
+        resp[47]=(uint8_t)(v>>16); resp[48]=(uint8_t)(v>>24);
+        len=49; break;
     case KBD_CMD_RADIO_PAIR_START:
     case KBD_CMD_RADIO_PAIR_CANCEL:
     case KBD_CMD_RADIO_PAIR_CLEAR:

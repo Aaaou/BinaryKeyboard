@@ -21,6 +21,7 @@ void Receiver_Radio_GetPeerId(uint8_t out[6]);
 uint32_t Receiver_Radio_GetPairFingerprint(void);
 uint32_t Receiver_Radio_GetPairGeneration(void);
 uint32_t Receiver_Radio_GetLastValidAge(void);
+uint32_t Receiver_Radio_GetLastRfActivityAge(void);
 /* Ages, in RTC 32 kHz ticks, of the most recent disconnect diagnostics. */
 uint32_t Receiver_Radio_GetLastLinkTimeoutAge(void);
 uint32_t Receiver_Radio_GetLastReleaseQueuedAge(void);

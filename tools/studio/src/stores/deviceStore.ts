@@ -374,6 +374,7 @@ export const useDeviceStore = defineStore("device", () => {
         0x8c: 'RF 配码失败', 0x8d: '收到首个有效 RF 帧', 0x8e: '应用链路断开',
         0x8f: 'RF 链路超时回调', 0x90: 'HID 释放已排队',
         0x91: 'HID 释放报告已提交', 0x92: 'HID 释放 endpoint 忙',
+        0x93: 'RF 接收活动超时',
       };
       useTerminalStore().addEntry({
         direction: 'device', level: entry.result === 0 ? 'info' : 'error',

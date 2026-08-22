@@ -18,6 +18,7 @@
  * Allow a short reconnect window, then release USB HID from an independent
  * 1 ms timer so RF/TMOS work cannot delay stuck-key protection. */
 #define RX_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
+#define RX_RF_ACTIVITY_TIMEOUT_TICKS ((32768u * 600u) / 1000u)
 #define RX_RELEASE_REPEAT_TICKS ((32768u * 200u) / 1000u)
 #define RX_RELEASE_KEYBOARD 0x01u
 #define RX_RELEASE_MOUSE    0x02u
@@ -115,6 +116,7 @@ static volatile bool s_rx_quarantine;
 /* Device-side timestamps avoid confusing LOG_GET retrieval time with event
  * time when diagnosing RF-to-USB disconnect latency. */
 static volatile uint32_t s_last_link_timeout;
+static volatile uint32_t s_last_rf_activity;
 static volatile uint32_t s_last_release_queued;
 static volatile uint32_t s_last_release_sent;
 static volatile uint16_t s_release_busy_count;
@@ -309,6 +311,7 @@ static void bound_cb(staBound_t *status)
 static void irq_cb(rfRole_States_t status, uint8_t id)
 {
     (void)id;
+    if ((status & RF_STATE_RX) != 0u) s_last_rf_activity = RTC_GetCycle32k();
     if ((status & RF_STATE_RX) != 0u) s_rx_pending = true;
 }
 
@@ -537,10 +540,27 @@ __INTERRUPT
 __HIGH_CODE
 void TMR2_IRQHandler(void)
 {
+    uint32_t now = RTC_GetCycle32k();
     TMR2_ClearITFlag(TMR0_3_IT_CYC_END);
 
+    /* RFBound may spend seconds in its internal retry path before calling
+     * bleTimeout. Use RF-layer receive activity, rather than application HID
+     * edges, for an early stuck-key failsafe. */
+    if (!s_rf_disconnect_pending && s_state == KBD_RADIO_PAIR_CONNECTED &&
+        s_last_rf_activity != 0u &&
+        rtc_elapsed(now, s_last_rf_activity) >= RX_RF_ACTIVITY_TIMEOUT_TICKS) {
+        s_rf_disconnect_pending = true;
+        /* Reuse the release path but do not add another 400 ms grace period. */
+        s_rf_disconnect_started = now - RX_RF_DISCONNECT_GRACE_TICKS;
+        s_last_link_timeout = now;
+        s_release_sent_logged = false;
+        s_release_busy_logged = false;
+        Receiver_Log_Event(RX_LOG_RF_ACTIVITY_TIMEOUT,
+                           KBD_RECEIVER_STARTUP_STAGE, 0u);
+    }
+
     if (s_rf_disconnect_pending &&
-        rtc_elapsed(RTC_GetCycle32k(), s_rf_disconnect_started) >=
+        rtc_elapsed(now, s_rf_disconnect_started) >=
             RX_RF_DISCONNECT_GRACE_TICKS) {
         s_rf_disconnect_pending = false;
         s_has_sequence = false;
@@ -551,7 +571,7 @@ void TMR2_IRQHandler(void)
         s_release_sent_logged = false;
         s_release_busy_logged = false;
         s_release_repeat_active = true;
-        s_release_repeat_started = RTC_GetCycle32k();
+        s_release_repeat_started = now;
         s_last_release_queued = s_release_repeat_started;
         s_release_busy_count = 0u;
         s_rx_quarantine = true;
@@ -703,6 +723,7 @@ void Receiver_Radio_RfLibraryInit(void)
     s_boot_host_pending = false;
     s_boot_host_due = 0u;
     s_last_link_timeout = RX_DIAG_NONE;
+    s_last_rf_activity = 0u;
     s_last_release_queued = RX_DIAG_NONE;
     s_last_release_sent = RX_DIAG_NONE;
     s_release_busy_count = 0u;
@@ -791,6 +812,11 @@ uint32_t Receiver_Radio_GetPairGeneration(void) { return s_nv.generation; }
 uint32_t Receiver_Radio_GetLastValidAge(void)
 {
     return s_last_valid_rx ? rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) : 0xFFFFFFFFu;
+}
+uint32_t Receiver_Radio_GetLastRfActivityAge(void)
+{
+    return s_last_rf_activity ? rtc_elapsed(RTC_GetCycle32k(), s_last_rf_activity)
+                              : RX_DIAG_NONE;
 }
 static uint32_t receiver_diag_age(volatile uint32_t timestamp)
 {
