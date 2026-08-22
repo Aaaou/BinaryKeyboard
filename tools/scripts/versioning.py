@@ -34,7 +34,7 @@ CHIP_TO_COMPONENT = {
     "CH592F": "ch592",
 }
 
-CH592_MODELS = ("5KEY", "KNOB")
+CH592_MODELS = ("5KEY", "KNOB", "RECEIVER")
 CH552_MODELS = ("BASIC", "5KEY", "KNOB")
 STUDIO_ASSET_RE = re.compile(
     r"^BinaryKeyboard(?:[ .-])Studio-(?P<version>\d+\.\d+\.\d+)-"
@@ -43,7 +43,7 @@ MEOWISP_ASSET_RE = re.compile(
     r"^(?:BinaryKeyboard-ISP|MeowISP)-(?:linux-(?:amd64|arm64)|macos-(?:apple-silicon|intel))-(?P<version>\d+\.\d+(?:\.\d+)?)-portable\.(?:tar\.gz|zip)$|^(?:BinaryKeyboard-ISP|MeowISP)-windows-amd64-(?P<win_version>\d+\.\d+(?:\.\d+)?)\.exe$"
 )
 CH592_RELEASE_ASSET_RE = re.compile(
-    r"^CH592F-(?:BASIC|KNOB|5KEY)-(?P<version>\d+\.\d+\.\d+)(?:-(?:app|full|iap))?\.(?:bin|hex)$"
+    r"^CH592F-(?:RECEIVER|BASIC|KNOB|5KEY)-(?P<version>\d+\.\d+\.\d+)(?:-(?:app|full|iap))?\.(?:bin|hex)$"
 )
 CH552_RELEASE_ASSET_RE = re.compile(
     r"^CH552G-(?:BASIC|KNOB|5KEY)-(?P<version>\d+\.\d+\.\d+)\.(?:bin|hex)$"
@@ -504,15 +504,15 @@ def normalize_keyboard_name(keyboard: str) -> str:
         "5KEYS": "5KEY",
     }
     value = aliases.get(value, value)
-    if value not in {"BASIC", "KNOB", "5KEY"}:
+    if value not in {"BASIC", "KNOB", "5KEY", "RECEIVER"}:
         raise ValueError(f"Unsupported keyboard: {keyboard}")
     return value
 
 
 def ch592_model_from_keyboard(keyboard: str) -> str:
     keyboard_upper = normalize_keyboard_name(keyboard)
-    if keyboard_upper == "BASIC":
-        raise ValueError("CH592F does not support BASIC keyboard")
+    if keyboard_upper in {"BASIC", "RECEIVER"}:
+        raise ValueError("CH592F keyboard helper does not accept this model")
     return keyboard_upper
 
 

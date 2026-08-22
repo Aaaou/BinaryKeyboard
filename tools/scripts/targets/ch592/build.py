@@ -167,6 +167,8 @@ def _artifact_region_usage_from_objdump(build_dir: Path) -> Optional[dict[str, i
 
 
 def _normalize_keyboard(value: str) -> str:
+    if value.strip().upper() == "RECEIVER":
+        return "RECEIVER"
     keyboard = normalize_keyboard_name(value)
     if keyboard == "BASIC":
         die("CH592F does not support BASIC keyboard.")
@@ -203,14 +205,28 @@ def raw_artifact_paths(build_dir: Path) -> dict[str, Path]:
 
 def artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
     """All possible artifact paths (app + full + iap)."""
-    base = ch592_base_stem_for_keyboard(keyboard)
-    iap_hex = build_dir / ch592_iap_filename_for_keyboard(keyboard, "hex")
-    iap_bin = build_dir / ch592_iap_filename_for_keyboard(keyboard, "bin")
+    if keyboard == "RECEIVER":
+        version = os.environ.get("BK_VERSION_CH592", "dev")
+        base = f"CH592F-RECEIVER-{version}"
+        app_elf = build_dir / f"{base}.elf"
+        app_bin = build_dir / f"{base}-app.bin"
+        app_hex = build_dir / f"{base}-app.hex"
+        app_map = build_dir / f"{base}.map"
+        iap_hex = build_dir / f"{base}-iap.hex"
+        iap_bin = build_dir / f"{base}-iap.bin"
+    else:
+        base = ch592_base_stem_for_keyboard(keyboard)
+        app_elf = build_dir / ch592_filename_for_keyboard(keyboard, "elf")
+        app_bin = build_dir / ch592_filename_for_keyboard(keyboard, "bin")
+        app_hex = build_dir / ch592_filename_for_keyboard(keyboard, "hex")
+        app_map = build_dir / ch592_filename_for_keyboard(keyboard, "map")
+        iap_hex = build_dir / ch592_iap_filename_for_keyboard(keyboard, "hex")
+        iap_bin = build_dir / ch592_iap_filename_for_keyboard(keyboard, "bin")
     return {
-        "elf": build_dir / ch592_filename_for_keyboard(keyboard, "elf"),
-        "bin": build_dir / ch592_filename_for_keyboard(keyboard, "bin"),
-        "hex": build_dir / ch592_filename_for_keyboard(keyboard, "hex"),
-        "map": build_dir / ch592_filename_for_keyboard(keyboard, "map"),
+        "elf": app_elf,
+        "bin": app_bin,
+        "hex": app_hex,
+        "map": app_map,
         "full_hex": build_dir / f"{base}-full.hex",
         "full_bin": build_dir / f"{base}-full.bin",
         "iap_hex": iap_hex,
@@ -324,11 +340,13 @@ def cmake_configure_args(cmake: Path, keyboard: str, profile: str, build_dir: Pa
         "-B", str(build_dir),
         *_generator_configure_args(),
         f"-DCMAKE_TOOLCHAIN_FILE={FIRMWARE_DIR / 'cmake' / 'toolchain-ch59x.cmake'}",
-        f"-DKEYBOARD={keyboard}",
-        f"-DKBD_MODEL={keyboard}",
+        f"-DKEYBOARD={'5KEY' if keyboard == 'RECEIVER' else keyboard}",
+        f"-DKBD_MODEL={'RECEIVER' if keyboard == 'RECEIVER' else keyboard}",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
+    if keyboard == "RECEIVER":
+        args.append("-DKBD_RECEIVER_BUILD=ON")
     if profile == "sleep-test":
         args.append("-DKBD_SLEEP_TEST_MODE=ON")
     return args
@@ -438,10 +456,11 @@ def build(keyboard: str, profile: str) -> Path:
     cache_file = build_dir / "CMakeCache.txt"
     cached_keyboard = _parse_cmake_cache_var(cache_file, "KEYBOARD")
     cached_model = _parse_cmake_cache_var(cache_file, "KBD_MODEL")
+    expected_cmake_keyboard = "5KEY" if keyboard == "RECEIVER" else keyboard
     if (
         not _ninja_build_files_ready(build_dir)
-        or (cached_keyboard and _normalize_keyboard(cached_keyboard) != keyboard)
-        or (cached_model and _normalize_keyboard(cached_model) != keyboard)
+        or (cached_keyboard and cached_keyboard.upper() != expected_cmake_keyboard)
+        or (cached_model and cached_model.upper() != keyboard)
     ):
         configure(keyboard, profile)
 

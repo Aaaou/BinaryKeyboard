@@ -1,6 +1,7 @@
 #ifndef RECEIVER_RADIO_H
 #define RECEIVER_RADIO_H
 #include <stdint.h>
+#include <stdbool.h>
 #include "kbd_radio_2g4.h"
 int Receiver_Radio_Init(void);
 /* Host startup diagnostic: 0=not attempted, 1=calling, 2=started, 3=failed. */
@@ -29,4 +30,7 @@ uint16_t Receiver_Radio_GetReleaseBusyCount(void);
 uint16_t Receiver_Radio_GetPollRate(void);
 int Receiver_Radio_SetPollRate(uint16_t rate);
 bool Receiver_Radio_TakeControlResult(int *result);
+/* USB IAP owns the device while Image B is being erased/written/verified. */
+void Receiver_Radio_SetIapBusy(bool busy);
+bool Receiver_Radio_IsIapBusy(void);
 #endif

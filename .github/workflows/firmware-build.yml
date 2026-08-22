@@ -30,6 +30,7 @@ jobs:
         keyboard:
           - 5KEY
           - KNOB
+          - RECEIVER
     container:
       image: ghcr.io/meowkj/binarykeyboard-builder:latest
       credentials:

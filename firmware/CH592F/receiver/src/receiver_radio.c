@@ -131,6 +131,7 @@ static bool s_release_busy_logged;
 static volatile bool s_release_repeat_active;
 static uint32_t s_release_repeat_started;
 static volatile bool s_rx_quarantine;
+static volatile bool s_iap_busy;
 /* Device-side timestamps avoid confusing LOG_GET retrieval time with event
  * time when diagnosing RF-to-USB disconnect latency. */
 static volatile uint32_t s_last_link_timeout;
@@ -737,6 +738,9 @@ uint8_t Receiver_Radio_GetHostStartupResult(void) { return s_host_startup_result
 
 void Receiver_Radio_Process(void)
 {
+    /* IAP owns the USB/Flash transaction; do not consume RF descriptors or
+     * enqueue reports while Image B is being erased, written, or verified. */
+    if (s_iap_busy) return;
     process_binding_save();
     process_control();
     if (s_host_restart_pending) {
@@ -785,6 +789,25 @@ void Receiver_Radio_Process(void)
         if (has_peer()) start_host(false);
         else s_state = KBD_RADIO_PAIR_UNBOUND;
     }
+}
+
+void Receiver_Radio_SetIapBusy(bool busy)
+{
+    if (busy == s_iap_busy) return;
+    if (busy) {
+        /* RF is not required while USB owns the Image B transaction. */
+        stop_host();
+        s_rx_pending = false;
+        s_host_restart_pending = false;
+        s_boot_host_pending = false;
+        s_release_pending = true;
+    }
+    s_iap_busy = busy;
+}
+
+bool Receiver_Radio_IsIapBusy(void)
+{
+    return s_iap_busy;
 }
 
 int Receiver_Radio_StartPairing(void) { return request_control(RX_CONTROL_PAIR_START, 0u); }

@@ -192,7 +192,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
           reset: false,
           explicitSave: false,
           wireless: false,
-          iap: false,
+          // The receiver now implements the same USB IAP command set as the
+          // keyboard. This is the production maintenance path after the
+          // receiver has been assembled and its ISP fly-wires removed.
+          iap: true,
           radio2g4: true,
           receiverRole: true,
         }

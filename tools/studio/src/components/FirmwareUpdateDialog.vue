@@ -127,6 +127,7 @@ const targetVersionLabel = computed(() =>
   props.targetVersion === 'dev' ? 'dev' : `v${props.targetVersion}`
 );
 const isCh592 = computed(() => deviceStore.deviceInfo?.protocol === DeviceProtocol.CH592);
+const isReceiver = computed(() => deviceStore.deviceInfo?.capabilities.receiverRole === true);
 const dialogTitle = computed(() => (isCh592.value ? 'CH592F 固件更新' : '固件更新'));
 const targetLabel = computed(() =>
   props.targetVersion && targetVersionLabel.value !== currentVersion.value ? '最新版本' : '目标版本'
@@ -138,10 +139,12 @@ const iapModeLabel = computed(() => {
   return `${currentVersion.value} → ${targetVersionLabel.value}`;
 });
 const warningText = computed(() => {
+  if (isReceiver.value) return '接收器升级期间会暂停 2.4G Host；请保持 USB 连接，不要拔出接收器。';
   if (isCh592.value) return '刷写过程中请保持连接，不要关闭 Studio 或拔出设备。';
   return '更新过程中请勿断开设备或关闭页面';
 });
 const successText = computed(() => {
+  if (isReceiver.value) return '接收器固件写入成功，设备已重启。请等待重新枚举后再测试 RF Host。';
   if (isCh592.value) return 'CH592F 固件写入成功，设备已重启。若页面仍显示断开，请等待自动重连或重新连接。';
   return '固件更新成功！设备已重启。';
 });
@@ -160,6 +163,7 @@ const isUpdating = computed(() =>
 
 /** 将 KeyboardType 映射为固件文件名中的型号 */
 function resolveModel(): string {
+  if (deviceStore.deviceInfo?.capabilities.receiverRole) return 'RECEIVER';
   const type = deviceStore.deviceInfo?.keyboardType;
   switch (type) {
     case KeyboardType.FIVE_KEYS: return '5KEY';

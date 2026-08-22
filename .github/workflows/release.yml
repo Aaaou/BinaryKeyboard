@@ -67,6 +67,7 @@ jobs:
         keyboard:
           - 5KEY
           - KNOB
+          - RECEIVER
     container:
       image: ghcr.io/meowkj/binarykeyboard-builder:latest
       credentials:
@@ -490,7 +491,7 @@ jobs:
           dist_dir = Path("dist")
 
           chip_labels = {"CH592F": "📡 无线", "CH552G": "🔌 有线"}
-          kb_labels = {"5KEY": "五键", "KNOB": "旋钮", "BASIC": "基础"}
+          kb_labels = {"5KEY": "五键", "KNOB": "旋钮", "RECEIVER": "接收器", "BASIC": "基础"}
 
           rows = []
           for p in sorted(sizes_dir.glob("*.json")):

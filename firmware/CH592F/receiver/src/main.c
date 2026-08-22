@@ -3,6 +3,7 @@
 #include "receiver_radio.h"
 #include "receiver_log.h"
 #include "RF.h"
+#include "kbd_iap.h"
 
 void Receiver_Command_ProcessDeferred(void);
 
@@ -13,6 +14,7 @@ int main(void)
     Receiver_Log_Init();
     Receiver_Log_Event(RX_LOG_BOOT, KBD_RECEIVER_STARTUP_STAGE, 0u);
     USB_Device_Init();
+    KBD_IAP_Init();
 
     /* USB enumeration is asynchronous. RF must start even when no USB host is
      * present; the management/HID endpoints become usable once configured. */
