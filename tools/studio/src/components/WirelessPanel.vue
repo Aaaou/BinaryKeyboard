@@ -14,7 +14,6 @@
       <div><span>诊断协议</span><code>{{ status.protocolVersion ? `v${status.protocolVersion}` : '旧固件' }}</code></div>
       <template v-if="caps.role === 'receiver' && status.lastLinkTimeoutAgeMs !== undefined">
         <div><span>最近 RF 超时</span><code>{{ status.lastLinkTimeoutAgeMs == null ? '尚未发生' : `${status.lastLinkTimeoutAgeMs} ms 前` }}</code></div>
-        <div><span>最近 RF 活动</span><code>{{ status.lastRfActivityAgeMs == null ? '尚未收到' : `${status.lastRfActivityAgeMs} ms 前` }}</code></div>
         <div><span>释放排队</span><code>{{ status.lastReleaseQueuedAgeMs == null ? '尚未发生' : `${status.lastReleaseQueuedAgeMs} ms 前` }}</code></div>
         <div><span>释放提交</span><code>{{ status.lastReleaseSentAgeMs == null ? '尚未发生' : `${status.lastReleaseSentAgeMs} ms 前` }}</code></div>
         <div><span>USB 忙次数</span><code>{{ status.releaseBusyCount ?? 0 }}</code></div>

@@ -557,7 +557,6 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       lastReleaseQueuedAgeMs: payloadLength >= 39 ? diagAgeMs(35) : undefined,
       lastReleaseSentAgeMs: payloadLength >= 43 ? diagAgeMs(39) : undefined,
       releaseBusyCount: payloadLength >= 45 ? resp.getUint16(d + 43, true) : undefined,
-      lastRfActivityAgeMs: payloadLength >= 49 ? diagAgeMs(45) : undefined,
     };
   }
 

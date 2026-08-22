@@ -97,7 +97,6 @@ export interface PairStatus {
   lastReleaseQueuedAgeMs?: number | null;
   lastReleaseSentAgeMs?: number | null;
   releaseBusyCount?: number;
-  lastRfActivityAgeMs?: number | null;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {
