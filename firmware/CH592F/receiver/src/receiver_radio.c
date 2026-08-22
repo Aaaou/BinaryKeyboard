@@ -18,7 +18,6 @@
  * Allow a short reconnect window, then release USB HID from an independent
  * 1 ms timer so RF/TMOS work cannot delay stuck-key protection. */
 #define RX_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
-#define RX_APP_LINK_TIMEOUT_TICKS ((32768u * 500u) / 1000u)
 #define RX_RELEASE_REPEAT_TICKS ((32768u * 200u) / 1000u)
 #define RX_RELEASE_KEYBOARD 0x01u
 #define RX_RELEASE_MOUSE    0x02u
@@ -425,27 +424,6 @@ static void enqueue_release_all(void)
     s_release_pending = false;
 }
 
-/* Arm the release path exactly once. This is called from the 1 ms failsafe
- * timer, so USB endpoint access remains in Receiver_Radio_Process(). */
-static void queue_link_release(uint32_t now, uint8_t event, uint8_t result)
-{
-    if (s_emergency_release_mask != 0u) return;
-    s_rf_disconnect_pending = false;
-    s_has_sequence = false;
-    s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
-    s_emergency_release_mask = RX_RELEASE_ALL;
-    s_release_pending = true;
-    s_link_lost_log_pending = true;
-    s_release_sent_logged = false;
-    s_release_busy_logged = false;
-    s_release_repeat_active = true;
-    s_release_repeat_started = now;
-    s_last_release_queued = now;
-    s_release_busy_count = 0u;
-    s_rx_quarantine = true;
-    Receiver_Log_Event(event, KBD_RECEIVER_STARTUP_STAGE, result);
-}
-
 static bool frame_is_new(const kbd_radio_frame_t *frame)
 {
     if (!s_has_sequence || frame->header.session != s_last_session) return true;
@@ -463,18 +441,7 @@ static void process_rf_rx(void)
             uint16_t len = (uint16_t)(raw_len - PKT_HEAD_LEN);
             const kbd_radio_frame_t *frame =
                 (const kbd_radio_frame_t *)(pDMARxGet->BufferAddr + PKT_HEAD_LEN);
-            bool app_frame = false;
-            if (len >= sizeof(frame->header) + sizeof(frame->crc16)) {
-                app_frame = (frame->header.type == KBD_RADIO_FRAME_KEEPALIVE &&
-                             frame->header.length == 0u) ||
-                            (frame->header.type == KBD_RADIO_FRAME_KEYBOARD &&
-                             frame->header.length == 8u) ||
-                            (frame->header.type == KBD_RADIO_FRAME_MOUSE &&
-                             frame->header.length == 4u) ||
-                            (frame->header.type == KBD_RADIO_FRAME_CONSUMER &&
-                             frame->header.length == 2u);
-            }
-            if (app_frame && KBD_RadioProtocol_Validate(frame, len) && frame_is_new(frame)) {
+            if (KBD_RadioProtocol_Validate(frame, len) && frame_is_new(frame)) {
                 s_last_session = frame->header.session;
                 s_last_sequence = frame->header.sequence;
                 s_last_valid_rx = RTC_GetCycle32k();
@@ -573,22 +540,24 @@ void TMR2_IRQHandler(void)
     uint32_t now = RTC_GetCycle32k();
     TMR2_ClearITFlag(TMR0_3_IT_CYC_END);
 
-    /* RFBound is the transport authority, but its internal retry path can
-     * take seconds when the keyboard is powered off. The keyboard therefore
-     * emits a 100 ms application heartbeat; five missed heartbeats release
-     * USB HID without guessing from raw RF DMA activity. */
-    if (s_state == KBD_RADIO_PAIR_CONNECTED && s_last_valid_rx != 0u &&
-        rtc_elapsed(now, s_last_valid_rx) >= RX_APP_LINK_TIMEOUT_TICKS &&
-        s_emergency_release_mask == 0u) {
-        Receiver_Log_Event(RX_LOG_APP_LINK_TIMEOUT,
-                           KBD_RECEIVER_STARTUP_STAGE, 0u);
-        queue_link_release(now, RX_LOG_HID_RELEASE_QUEUED, RX_RELEASE_ALL);
-    }
-
     if (s_rf_disconnect_pending &&
         rtc_elapsed(now, s_rf_disconnect_started) >=
             RX_RF_DISCONNECT_GRACE_TICKS) {
-        queue_link_release(now, RX_LOG_HID_RELEASE_QUEUED, RX_RELEASE_ALL);
+        s_rf_disconnect_pending = false;
+        s_has_sequence = false;
+        s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
+        s_emergency_release_mask = RX_RELEASE_ALL;
+        s_release_pending = true;
+        s_link_lost_log_pending = true;
+        s_release_sent_logged = false;
+        s_release_busy_logged = false;
+        s_release_repeat_active = true;
+        s_release_repeat_started = now;
+        s_last_release_queued = s_release_repeat_started;
+        s_release_busy_count = 0u;
+        s_rx_quarantine = true;
+        Receiver_Log_Event(RX_LOG_HID_RELEASE_QUEUED,
+                           KBD_RECEIVER_STARTUP_STAGE, RX_RELEASE_ALL);
     }
     /* USB endpoint/DMA access is main-loop owned. Timer2 only raises the mask. */
 }
