@@ -8,20 +8,19 @@ void Receiver_Command_ProcessDeferred(void);
 
 int main(void)
 {
+    bool usb_configured_logged = false;
     SetSysClock(CLK_SOURCE_PLL_60MHz);
     Receiver_Log_Init();
     Receiver_Log_Event(RX_LOG_BOOT, KBD_RECEIVER_STARTUP_STAGE, 0u);
     USB_Device_Init();
 
-    /* Bring USB up before the 32 kHz/TMOS/RF initialization. A receiver has
-     * no useful radio role without a host, and USB enumeration must remain
-     * available even if board-specific low-speed clock startup fails. */
-    while (g_USB_DeviceState != USB_STATE_CONFIGURED) {
-        __asm__ volatile ("nop");
+    /* USB enumeration is asynchronous. RF must start even when no USB host is
+     * present; the management/HID endpoints become usable once configured. */
+    if (g_USB_DeviceState == USB_STATE_CONFIGURED) {
+        Receiver_Log_Event(RX_LOG_USB_CONFIGURED, KBD_RECEIVER_STARTUP_STAGE, 0u);
+        Receiver_Log_SetCompletedStage(0u);
+        usb_configured_logged = true;
     }
-    Receiver_Log_Event(RX_LOG_USB_CONFIGURED, KBD_RECEIVER_STARTUP_STAGE, 0u);
-    /* Stage 0 is a live USB receiver, not just a compile-time selection. */
-    Receiver_Log_SetCompletedStage(0u);
 
 #if KBD_RECEIVER_STARTUP_STAGE >= 1
     /* WCH RF Host requires TMOS task/message storage before HAL_TimeInit and
@@ -55,6 +54,11 @@ int main(void)
 #endif
 #endif
     while (1) {
+        if (!usb_configured_logged && g_USB_DeviceState == USB_STATE_CONFIGURED) {
+            Receiver_Log_Event(RX_LOG_USB_CONFIGURED, KBD_RECEIVER_STARTUP_STAGE, 0u);
+            Receiver_Log_SetCompletedStage(0u);
+            usb_configured_logged = true;
+        }
 #if KBD_RECEIVER_STARTUP_STAGE >= 2
         TMOS_SystemProcess();
 #endif

@@ -82,7 +82,7 @@ static uint8_t s_pending_peer[6];
 static uint8_t s_pending_device_id;
 static uint32_t s_pair_started;
 static uint32_t s_last_usb_report;
-static uint32_t s_usb_poll_phase;
+static uint64_t s_usb_poll_phase;
 static uint32_t s_last_session;
 static uint32_t s_last_sequence;
 static uint32_t s_last_valid_rx;
@@ -155,6 +155,16 @@ static bool nv_valid(const receiver_nv_t *nv)
     if (nv->magic != RX_NV_MAGIC || nv->version != RX_NV_VERSION ||
         nv->size != sizeof(*nv) || nv->device_id > RF_ROLE_ID_INVALD ||
         !valid_poll_rate(nv->poll_rate)) return false;
+    /* A binding is either completely empty or contains both peer identity and
+     * an assigned keyboard slot. Reject half-written/half-erased records. */
+    bool peer_present = false;
+    for (uint8_t i = 0; i < sizeof(nv->peer); i++) {
+        if (nv->peer[i] != 0u) {
+            peer_present = true;
+            break;
+        }
+    }
+    if (peer_present != (nv->device_id != RF_ROLE_ID_INVALD)) return false;
     return nv->crc == KBD_RadioProtocol_Crc16((const uint8_t *)nv,
                                                (uint16_t)(sizeof(*nv) - sizeof(nv->crc)));
 }
@@ -325,8 +335,13 @@ static void stop_host(void)
 static void keyboard_enqueue(const USB_KeyboardReport_t *report)
 {
     if (s_keyboard_queue.count == RX_REPORT_QUEUE_DEPTH) {
-        uint8_t newest = (uint8_t)((s_keyboard_queue.head + s_keyboard_queue.count - 1u) % RX_REPORT_QUEUE_DEPTH);
-        memcpy(&s_keyboard_queue.items[newest], report, sizeof(*report));
+        /* Keyboard reports are complete snapshots, not events. Once backlog
+         * exists, retaining stale transitions is worse than dropping them:
+         * collapse to the newest state so a release cannot sit behind old
+         * presses and keep the host logically stuck. */
+        s_keyboard_queue.head = 0u;
+        s_keyboard_queue.count = 1u;
+        memcpy(&s_keyboard_queue.items[0], report, sizeof(*report));
         return;
     }
     uint8_t tail = (uint8_t)((s_keyboard_queue.head + s_keyboard_queue.count) % RX_REPORT_QUEUE_DEPTH);
@@ -430,7 +445,7 @@ static void flush_usb_reports(uint32_t now)
         s_usb_poll_phase = 0u;
         return;
     }
-    s_usb_poll_phase += elapsed * s_nv.poll_rate;
+    s_usb_poll_phase += (uint64_t)elapsed * s_nv.poll_rate;
     if (s_usb_poll_phase < 32768u) return;
     s_usb_poll_phase %= 32768u;
 
@@ -486,7 +501,7 @@ void TMR2_IRQHandler(void)
         s_release_pending = true;
         s_link_lost_log_pending = true;
     }
-    if (s_emergency_release_mask != 0u) emergency_release_try();
+    /* USB endpoint/DMA access is main-loop owned. Timer2 only raises the mask. */
 }
 
 static void process_binding_save(void)
@@ -669,6 +684,7 @@ void Receiver_Radio_Process(void)
     }
     if (s_emergency_release_mask != 0u) s_release_pending = true;
     if (s_release_pending) enqueue_release_all();
+    if (s_emergency_release_mask != 0u) emergency_release_try();
     flush_usb_reports(now);
     if (s_state == KBD_RADIO_PAIRING && rtc_elapsed(now, s_pair_started) >= RX_PAIR_WINDOW_TICKS) {
         s_release_pending = true;
@@ -685,7 +701,8 @@ int Receiver_Radio_ClearPairing(void) { return request_control(RX_CONTROL_PAIR_C
 kbd_radio_pair_state_t Receiver_Radio_GetState(void) { return s_state; }
 uint8_t Receiver_Radio_GetPeerDeviceId(void) { return has_peer() ? s_nv.device_id : RF_ROLE_ID_INVALD; }
 bool Receiver_Radio_HasPeer(void) { return has_peer(); }
-uint8_t Receiver_Radio_GetDeviceId(void) { return 0; }
+/* The receiver is the RFBound host and uses the reserved binding slot. */
+uint8_t Receiver_Radio_GetDeviceId(void) { return RF_ROLE_BOUND_ID; }
 void Receiver_Radio_GetLocalId(uint8_t out[6]) { if (out) memcpy(out, s_local, 6); }
 void Receiver_Radio_GetPeerId(uint8_t out[6]) { if (out) memcpy(out, s_nv.peer, 6); }
 uint32_t Receiver_Radio_GetPairFingerprint(void)
