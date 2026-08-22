@@ -106,6 +106,8 @@ static volatile bool s_rf_disconnect_pending;
 static uint32_t s_rf_disconnect_started;
 static volatile uint8_t s_emergency_release_mask;
 static volatile bool s_link_lost_log_pending;
+static bool s_release_sent_logged;
+static bool s_release_busy_logged;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static void receiver_tmos_enable_irq(void)
@@ -254,9 +256,16 @@ static void bound_cb(staBound_t *status)
         }
     } else if (status->status == bleTimeout) {
         s_has_sequence = false;
-        if (s_state == KBD_RADIO_PAIR_CONNECTED && !s_rf_disconnect_pending) {
+        /* A late RFBound callback may arrive after the visible state has
+         * already fallen back to BOUND. A valid application frame proves that
+         * this was an active link, so still arm the HID failsafe release. */
+        if ((s_state == KBD_RADIO_PAIR_CONNECTED || s_last_valid_rx != 0u) &&
+            !s_rf_disconnect_pending) {
             s_rf_disconnect_pending = true;
             s_rf_disconnect_started = RTC_GetCycle32k();
+            s_release_sent_logged = false;
+            s_release_busy_logged = false;
+            Receiver_Log_Event(RX_LOG_LINK_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
         }
         if (!s_pair_timeout_logged) {
             Receiver_Log_Event(RX_LOG_PAIR_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
@@ -264,9 +273,14 @@ static void bound_cb(staBound_t *status)
         }
     } else {
         s_has_sequence = false;
-        if (s_state == KBD_RADIO_PAIR_CONNECTED && !s_rf_disconnect_pending) {
+        if ((s_state == KBD_RADIO_PAIR_CONNECTED || s_last_valid_rx != 0u) &&
+            !s_rf_disconnect_pending) {
             s_rf_disconnect_pending = true;
             s_rf_disconnect_started = RTC_GetCycle32k();
+            s_release_sent_logged = false;
+            s_release_busy_logged = false;
+            Receiver_Log_Event(RX_LOG_LINK_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE,
+                               status->status);
         } else if (s_state != KBD_RADIO_PAIR_CONNECTED) {
             s_state = has_peer() ? KBD_RADIO_PAIR_BOUND : KBD_RADIO_PAIR_UNBOUND;
         }
@@ -471,6 +485,7 @@ static void emergency_release_try(void)
     USB_MouseReport_t mouse = {0};
     USB_ConsumerReport_t consumer = {0};
 
+    uint8_t before = s_emergency_release_mask;
     if ((s_emergency_release_mask & RX_RELEASE_KEYBOARD) != 0u &&
         USB_Keyboard_TrySend(&keyboard)) {
         s_emergency_release_mask &= (uint8_t)~RX_RELEASE_KEYBOARD;
@@ -482,6 +497,19 @@ static void emergency_release_try(void)
     if ((s_emergency_release_mask & RX_RELEASE_CONSUMER) != 0u &&
         USB_Consumer_TrySend(&consumer)) {
         s_emergency_release_mask &= (uint8_t)~RX_RELEASE_CONSUMER;
+    }
+    if (s_emergency_release_mask != before) {
+        if (!s_release_sent_logged) {
+            Receiver_Log_Event(RX_LOG_HID_RELEASE_SENT,
+                               KBD_RECEIVER_STARTUP_STAGE,
+                               (uint8_t)(before ^ s_emergency_release_mask));
+            s_release_sent_logged = true;
+        }
+    } else if (before != 0u && g_USB_DeviceState == USB_STATE_CONFIGURED &&
+               !s_release_busy_logged) {
+        Receiver_Log_Event(RX_LOG_HID_RELEASE_BUSY,
+                           KBD_RECEIVER_STARTUP_STAGE, before);
+        s_release_busy_logged = true;
     }
 }
 
@@ -500,6 +528,10 @@ void TMR2_IRQHandler(void)
         s_emergency_release_mask = RX_RELEASE_ALL;
         s_release_pending = true;
         s_link_lost_log_pending = true;
+        s_release_sent_logged = false;
+        s_release_busy_logged = false;
+        Receiver_Log_Event(RX_LOG_HID_RELEASE_QUEUED,
+                           KBD_RECEIVER_STARTUP_STAGE, RX_RELEASE_ALL);
     }
     /* USB endpoint/DMA access is main-loop owned. Timer2 only raises the mask. */
 }

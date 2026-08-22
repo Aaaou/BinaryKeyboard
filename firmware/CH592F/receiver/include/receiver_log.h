@@ -19,6 +19,10 @@
 #define RX_LOG_PAIR_FAILURE         0x8Cu
 #define RX_LOG_RF_FRAME_OK           0x8Du
 #define RX_LOG_LINK_LOST            0x8Eu
+#define RX_LOG_LINK_TIMEOUT         0x8Fu
+#define RX_LOG_HID_RELEASE_QUEUED   0x90u
+#define RX_LOG_HID_RELEASE_SENT     0x91u
+#define RX_LOG_HID_RELEASE_BUSY     0x92u
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);
