@@ -19,6 +19,21 @@
 #define KBD_RF_FAILURE_FLASH_TICKS ((32768u * 300u) / 1000u)
 #define KBD_RF_PAIR_WINDOW_TICKS (60u * 32768u)
 
+/*
+ * RELEASE LIMITATION (intentional and documented):
+ *
+ * We tried three application-side ways to stop a held key after a receiver
+ * disappears: periodic KEEPALIVE frames, a short application watchdog, and a
+ * timer-driven RF role restart after bleTimeout.  They were removed because
+ * they filled the WCH RFBound TX ring or interrupted RFBound's own recovery.
+ * The WCH reference device has the same boundary: bleTimeout is an internal
+ * recovery state and only FAILURE restarts the bound role.  Therefore this
+ * firmware cannot guarantee a sub-second stop when the keyboard loses power
+ * before sending a release report.  A host may continue repeating the last
+ * HID state for about five seconds until RFBound reports a terminal failure
+ * and the receiver's HID release path runs.  Do not describe this as fixed.
+ */
+
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint8_t peer[6];

@@ -18,6 +18,9 @@ typedef enum {
     KBD_RADIO_FRAME_KEYBOARD = 5,
     KBD_RADIO_FRAME_UNPAIR_REQUEST = 6,
     KBD_RADIO_FRAME_UNPAIR_ACK = 7,
+    /* Reserved from the rejected application-watchdog experiment. Current
+     * firmware deliberately does not emit or supervise KEEPALIVE frames;
+     * RFBound owns link liveness. Keep the value for wire compatibility only. */
     KBD_RADIO_FRAME_KEEPALIVE = 8,
     KBD_RADIO_FRAME_MOUSE = 9,
     KBD_RADIO_FRAME_CONSUMER = 10,

@@ -24,6 +24,25 @@
 #define RX_RELEASE_CONSUMER 0x04u
 #define RX_RELEASE_ALL      0x07u
 
+/*
+ * RELEASE LIMITATION (intentional and documented):
+ *
+ * We previously tried an application HID/KEEPALIVE watchdog, an immediate
+ * zero-report on every timeout, and an aggressive RFRole_Shut/RF_LibInit
+ * reconnect loop.  Those approaches either caused false disconnects during
+ * normal RFBound recovery, saturated the TX descriptors, or prevented the
+ * keyboard from reconnecting.  They are not part of this release.
+ *
+ * The WCH reference dongle also treats bleTimeout as a library-owned recovery
+ * state and only restarts the Host after FAILURE.  Consequently a keyboard
+ * that loses power without sending a release report can keep the last HID
+ * state visible to the USB host for roughly five seconds, depending on the
+ * RFBound timeout and USB scheduling.  This is a known lower-layer limit, not
+ * a solved feature.  The receiver sends all-zero reports after its confirmed
+ * disconnect path, but it cannot make that path occur before RFBound signals
+ * the disconnect.  Do not claim sub-second release in product material.
+ */
+
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint16_t version;
