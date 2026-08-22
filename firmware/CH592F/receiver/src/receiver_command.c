@@ -29,7 +29,7 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data, uin
 }
 int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 {
-    uint8_t resp[32] = { KBD_RESP_OK };
+    uint8_t resp[48] = { KBD_RESP_OK };
     int ret = 0; uint8_t len = 1;
     Receiver_Log_MarkHostSeen();
     if (s_deferred_response &&
@@ -70,7 +70,11 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         resp[8]=244; resp[9]=1; resp[10]=232; resp[11]=3; len=12; break;
     case KBD_CMD_RADIO_PAIR_STATUS:
         /* [OK][state][role][device id][peer id][local 6][peer 6]
-         * [fingerprint 4][generation 4][last valid age 4]. */
+         * [fingerprint 4][generation 4][last valid age 4]
+         * [link timeout age 4][release queued age 4][release sent age 4]
+         * [release busy count 2]. The first 31 bytes remain compatible with
+         * protocol v1 clients. */
+        uint32_t v;
         resp[1]=(uint8_t)Receiver_Radio_GetState();
         resp[2]=1;
         resp[3]=Receiver_Radio_GetDeviceId();
@@ -78,7 +82,7 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         Receiver_Radio_GetLocalId(&resp[5]);
         Receiver_Radio_GetPeerId(&resp[11]);
         {
-            uint32_t v = Receiver_Radio_GetPairFingerprint();
+            v = Receiver_Radio_GetPairFingerprint();
             resp[17]=(uint8_t)v; resp[18]=(uint8_t)(v>>8);
             resp[19]=(uint8_t)(v>>16); resp[20]=(uint8_t)(v>>24);
             v = Receiver_Radio_GetPairGeneration();
@@ -88,11 +92,22 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
             resp[25]=(uint8_t)v; resp[26]=(uint8_t)(v>>8);
             resp[27]=(uint8_t)(v>>16); resp[28]=(uint8_t)(v>>24);
         }
-        resp[29]=1;
+        resp[29]=2;
         resp[30]=(Receiver_Radio_HasPeer() ? 0x01 : 0x00) |
                  (Receiver_Radio_GetState()==KBD_RADIO_PAIR_CONNECTED ? 0x02 : 0x00) |
                  (Receiver_Radio_GetState()==KBD_RADIO_PAIRING ? 0x04 : 0x00);
-        len=31; break;
+        v = Receiver_Radio_GetLastLinkTimeoutAge();
+        resp[31]=(uint8_t)v; resp[32]=(uint8_t)(v>>8);
+        resp[33]=(uint8_t)(v>>16); resp[34]=(uint8_t)(v>>24);
+        v = Receiver_Radio_GetLastReleaseQueuedAge();
+        resp[35]=(uint8_t)v; resp[36]=(uint8_t)(v>>8);
+        resp[37]=(uint8_t)(v>>16); resp[38]=(uint8_t)(v>>24);
+        v = Receiver_Radio_GetLastReleaseSentAge();
+        resp[39]=(uint8_t)v; resp[40]=(uint8_t)(v>>8);
+        resp[41]=(uint8_t)(v>>16); resp[42]=(uint8_t)(v>>24);
+        v = Receiver_Radio_GetReleaseBusyCount();
+        resp[43]=(uint8_t)v; resp[44]=(uint8_t)(v>>8);
+        len=45; break;
     case KBD_CMD_RADIO_PAIR_START:
     case KBD_CMD_RADIO_PAIR_CANCEL:
     case KBD_CMD_RADIO_PAIR_CLEAR:

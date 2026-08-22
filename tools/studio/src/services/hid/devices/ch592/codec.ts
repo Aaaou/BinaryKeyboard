@@ -526,6 +526,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     const lastAge = payloadLength >= 29 ? resp.getUint32(d + 25, true) : 0xffffffff;
     const protocolVersion = payloadLength >= 31 ? resp.getUint8(d + 29) : 0;
     const flags = payloadLength >= 31 ? resp.getUint8(d + 30) : 0;
+    const diagAgeMs = (offset: number) => {
+      const ticks = resp.getUint32(d + offset, true);
+      return ticks === 0xffffffff ? null : Math.round(ticks * 1000 / 32768);
+    };
     return {
       state,
       session: payloadLength >= 25 ? resp.getUint32(d + 21, true) : 0,
@@ -549,6 +553,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
           ? null : Math.round(resp.getUint32(d + 43, true) * 1000 / 32768))
         : undefined,
       txDescriptorsBusy: payloadLength >= 48 ? resp.getUint8(d + 47) : undefined,
+      lastLinkTimeoutAgeMs: payloadLength >= 35 ? diagAgeMs(31) : undefined,
+      lastReleaseQueuedAgeMs: payloadLength >= 39 ? diagAgeMs(35) : undefined,
+      lastReleaseSentAgeMs: payloadLength >= 43 ? diagAgeMs(39) : undefined,
+      releaseBusyCount: payloadLength >= 45 ? resp.getUint16(d + 43, true) : undefined,
     };
   }
 

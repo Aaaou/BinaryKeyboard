@@ -12,6 +12,12 @@
       <div><span>最近有效帧</span><code>{{ lastFrameLabel }}</code></div>
       <div><span>链路确认</span><code>{{ status.linkConfirmed ? '已收到有效帧' : '未确认' }}</code></div>
       <div><span>诊断协议</span><code>{{ status.protocolVersion ? `v${status.protocolVersion}` : '旧固件' }}</code></div>
+      <template v-if="caps.role === 'receiver' && status.lastLinkTimeoutAgeMs !== undefined">
+        <div><span>最近 RF 超时</span><code>{{ status.lastLinkTimeoutAgeMs == null ? '尚未发生' : `${status.lastLinkTimeoutAgeMs} ms 前` }}</code></div>
+        <div><span>释放排队</span><code>{{ status.lastReleaseQueuedAgeMs == null ? '尚未发生' : `${status.lastReleaseQueuedAgeMs} ms 前` }}</code></div>
+        <div><span>释放提交</span><code>{{ status.lastReleaseSentAgeMs == null ? '尚未发生' : `${status.lastReleaseSentAgeMs} ms 前` }}</code></div>
+        <div><span>USB 忙次数</span><code>{{ status.releaseBusyCount ?? 0 }}</code></div>
+      </template>
       <template v-if="caps.role === 'keyboard' && status.txEnqueued !== undefined">
         <div><span>RF TX 入队/完成</span><code>{{ status.txEnqueued }} / {{ status.txFinished }}</code></div>
         <div><span>RF TX DMA 忙</span><code>{{ status.txBusy }} 次</code></div>

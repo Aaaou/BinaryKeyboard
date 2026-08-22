@@ -112,6 +112,13 @@ static bool s_release_busy_logged;
 static volatile bool s_release_repeat_active;
 static uint32_t s_release_repeat_started;
 static volatile bool s_rx_quarantine;
+/* Device-side timestamps avoid confusing LOG_GET retrieval time with event
+ * time when diagnosing RF-to-USB disconnect latency. */
+static volatile uint32_t s_last_link_timeout;
+static volatile uint32_t s_last_release_queued;
+static volatile uint32_t s_last_release_sent;
+static volatile uint16_t s_release_busy_count;
+#define RX_DIAG_NONE 0xFFFFFFFFu
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static void receiver_tmos_enable_irq(void)
@@ -269,6 +276,7 @@ static void bound_cb(staBound_t *status)
             !s_rf_disconnect_pending) {
             s_rf_disconnect_pending = true;
             s_rf_disconnect_started = RTC_GetCycle32k();
+            s_last_link_timeout = s_rf_disconnect_started;
             s_release_sent_logged = false;
             s_release_busy_logged = false;
             Receiver_Log_Event(RX_LOG_LINK_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE, 0u);
@@ -283,6 +291,7 @@ static void bound_cb(staBound_t *status)
             !s_rf_disconnect_pending) {
             s_rf_disconnect_pending = true;
             s_rf_disconnect_started = RTC_GetCycle32k();
+            s_last_link_timeout = s_rf_disconnect_started;
             s_release_sent_logged = false;
             s_release_busy_logged = false;
             Receiver_Log_Event(RX_LOG_LINK_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE,
@@ -508,16 +517,19 @@ static void emergency_release_try(void)
     }
     if (s_emergency_release_mask != before) {
         if (!s_release_sent_logged) {
+            s_last_release_sent = RTC_GetCycle32k();
             Receiver_Log_Event(RX_LOG_HID_RELEASE_SENT,
                                KBD_RECEIVER_STARTUP_STAGE,
                                (uint8_t)(before ^ s_emergency_release_mask));
             s_release_sent_logged = true;
         }
-    } else if (before != 0u && g_USB_DeviceState == USB_STATE_CONFIGURED &&
-               !s_release_busy_logged) {
-        Receiver_Log_Event(RX_LOG_HID_RELEASE_BUSY,
-                           KBD_RECEIVER_STARTUP_STAGE, before);
-        s_release_busy_logged = true;
+    } else if (before != 0u && g_USB_DeviceState == USB_STATE_CONFIGURED) {
+        if (s_release_busy_count != 0xFFFFu) s_release_busy_count++;
+        if (!s_release_busy_logged) {
+            Receiver_Log_Event(RX_LOG_HID_RELEASE_BUSY,
+                               KBD_RECEIVER_STARTUP_STAGE, before);
+            s_release_busy_logged = true;
+        }
     }
 }
 
@@ -540,6 +552,8 @@ void TMR2_IRQHandler(void)
         s_release_busy_logged = false;
         s_release_repeat_active = true;
         s_release_repeat_started = RTC_GetCycle32k();
+        s_last_release_queued = s_release_repeat_started;
+        s_release_busy_count = 0u;
         s_rx_quarantine = true;
         Receiver_Log_Event(RX_LOG_HID_RELEASE_QUEUED,
                            KBD_RECEIVER_STARTUP_STAGE, RX_RELEASE_ALL);
@@ -688,6 +702,10 @@ void Receiver_Radio_RfLibraryInit(void)
     s_host_active = false;
     s_boot_host_pending = false;
     s_boot_host_due = 0u;
+    s_last_link_timeout = RX_DIAG_NONE;
+    s_last_release_queued = RX_DIAG_NONE;
+    s_last_release_sent = RX_DIAG_NONE;
+    s_release_busy_count = 0u;
     RF_LibInit(irq_cb);
     TMR2_TimerInit(GetSysClock() / 1000u);
     TMR2_ITCfg(ENABLE, TMR0_3_IT_CYC_END);
@@ -774,6 +792,14 @@ uint32_t Receiver_Radio_GetLastValidAge(void)
 {
     return s_last_valid_rx ? rtc_elapsed(RTC_GetCycle32k(), s_last_valid_rx) : 0xFFFFFFFFu;
 }
+static uint32_t receiver_diag_age(volatile uint32_t timestamp)
+{
+    return timestamp == RX_DIAG_NONE ? RX_DIAG_NONE : rtc_elapsed(RTC_GetCycle32k(), timestamp);
+}
+uint32_t Receiver_Radio_GetLastLinkTimeoutAge(void) { return receiver_diag_age(s_last_link_timeout); }
+uint32_t Receiver_Radio_GetLastReleaseQueuedAge(void) { return receiver_diag_age(s_last_release_queued); }
+uint32_t Receiver_Radio_GetLastReleaseSentAge(void) { return receiver_diag_age(s_last_release_sent); }
+uint16_t Receiver_Radio_GetReleaseBusyCount(void) { return s_release_busy_count; }
 uint16_t Receiver_Radio_GetPollRate(void) { return s_nv.poll_rate; }
 int Receiver_Radio_SetPollRate(uint16_t rate)
 {

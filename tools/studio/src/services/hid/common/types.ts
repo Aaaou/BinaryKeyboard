@@ -93,6 +93,10 @@ export interface PairStatus {
   txFinished?: number;
   lastTxAgeMs?: number | null;
   txDescriptorsBusy?: number;
+  lastLinkTimeoutAgeMs?: number | null;
+  lastReleaseQueuedAgeMs?: number | null;
+  lastReleaseSentAgeMs?: number | null;
+  releaseBusyCount?: number;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {
