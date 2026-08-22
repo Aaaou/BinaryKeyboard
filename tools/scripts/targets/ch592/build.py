@@ -206,8 +206,9 @@ def raw_artifact_paths(build_dir: Path) -> dict[str, Path]:
 def artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
     """All possible artifact paths (app + full + iap)."""
     if keyboard == "RECEIVER":
-        version = os.environ.get("BK_VERSION_CH592", "dev")
-        base = f"CH592F-RECEIVER-{version}"
+        # Preserve the established ch592_receiver_full.py package names.
+        # The manifest carries the release version separately.
+        base = "CH592F-RECEIVER"
         app_elf = build_dir / f"{base}.elf"
         app_bin = build_dir / f"{base}-app.bin"
         app_hex = build_dir / f"{base}-app.hex"

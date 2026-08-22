@@ -360,6 +360,13 @@ def release_artifact_manifest(build_number: int | None = None) -> tuple[dict[str
 
     def ch592_asset(model: str) -> dict[str, str]:
         version = versions["ch592"]
+        if model == "RECEIVER":
+            return {
+                "channel": "release",
+                "version": version,
+                "appBinUrl": f"{base_url}/firmware/ch592f/CH592F-RECEIVER-app.bin",
+                "fullBinUrl": f"{base_url}/firmware/ch592f/CH592F-RECEIVER-full.bin",
+            }
         return {
             "channel": "release",
             "version": version,
