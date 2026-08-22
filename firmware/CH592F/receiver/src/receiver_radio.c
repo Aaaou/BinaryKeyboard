@@ -18,6 +18,7 @@
  * Allow a short reconnect window, then release USB HID from an independent
  * 1 ms timer so RF/TMOS work cannot delay stuck-key protection. */
 #define RX_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
+#define RX_RELEASE_REPEAT_TICKS ((32768u * 200u) / 1000u)
 #define RX_RELEASE_KEYBOARD 0x01u
 #define RX_RELEASE_MOUSE    0x02u
 #define RX_RELEASE_CONSUMER 0x04u
@@ -108,6 +109,9 @@ static volatile uint8_t s_emergency_release_mask;
 static volatile bool s_link_lost_log_pending;
 static bool s_release_sent_logged;
 static bool s_release_busy_logged;
+static volatile bool s_release_repeat_active;
+static uint32_t s_release_repeat_started;
+static volatile bool s_rx_quarantine;
 extern RF_DMADESCTypeDef *pDMARxGet;
 
 static void receiver_tmos_enable_irq(void)
@@ -243,6 +247,8 @@ static void bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
         s_rf_disconnect_pending = false;
+        s_rx_quarantine = false;
+        s_release_repeat_active = false;
         memcpy(s_pending_peer, status->PeerInfo, sizeof(s_pending_peer));
         s_pending_device_id = status->devId;
         s_binding_pending = true;
@@ -321,6 +327,7 @@ static int start_host(bool pairing)
     s_pair_success_logged = false;
     s_pair_timeout_logged = false;
     s_state = pairing ? KBD_RADIO_PAIRING : KBD_RADIO_PAIR_BOUND;
+    if (pairing) s_rx_quarantine = false;
     s_host_startup_state = 1u;
     s_host_startup_result = 0u;
     bStatus_t result = RFBound_StartHost(&host);
@@ -419,7 +426,8 @@ static void process_rf_rx(void)
     uint8_t descriptors_seen = 0u;
     while ((pDMARxGet->Status & STA_DMA_ENABLE) == 0u) {
         uint16_t raw_len = (uint16_t)(pDMARxGet->Status & STA_LEN_MASK);
-        if (raw_len >= PKT_HEAD_LEN && raw_len <= pDMARxGet->BufferSize &&
+        if (!s_rx_quarantine &&
+            raw_len >= PKT_HEAD_LEN && raw_len <= pDMARxGet->BufferSize &&
             raw_len <= (uint16_t)(PKT_HEAD_LEN + sizeof(kbd_radio_frame_t))) {
             uint16_t len = (uint16_t)(raw_len - PKT_HEAD_LEN);
             const kbd_radio_frame_t *frame =
@@ -530,6 +538,9 @@ void TMR2_IRQHandler(void)
         s_link_lost_log_pending = true;
         s_release_sent_logged = false;
         s_release_busy_logged = false;
+        s_release_repeat_active = true;
+        s_release_repeat_started = RTC_GetCycle32k();
+        s_rx_quarantine = true;
         Receiver_Log_Event(RX_LOG_HID_RELEASE_QUEUED,
                            KBD_RECEIVER_STARTUP_STAGE, RX_RELEASE_ALL);
     }
@@ -717,6 +728,17 @@ void Receiver_Radio_Process(void)
     if (s_emergency_release_mask != 0u) s_release_pending = true;
     if (s_release_pending) enqueue_release_all();
     if (s_emergency_release_mask != 0u) emergency_release_try();
+    if (s_release_repeat_active) {
+        if (rtc_elapsed(now, s_release_repeat_started) < RX_RELEASE_REPEAT_TICKS) {
+            /* Repeat all-zero snapshots for a short bounded window. This is
+             * deliberately finite: it protects against one missed USB IN
+             * transaction without flooding a healthy host forever. */
+            s_emergency_release_mask = RX_RELEASE_ALL;
+            emergency_release_try();
+        } else {
+            s_release_repeat_active = false;
+        }
+    }
     flush_usb_reports(now);
     if (s_state == KBD_RADIO_PAIRING && rtc_elapsed(now, s_pair_started) >= RX_PAIR_WINDOW_TICKS) {
         s_release_pending = true;
