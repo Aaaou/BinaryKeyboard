@@ -18,7 +18,6 @@ int main(void)
      * present; the management/HID endpoints become usable once configured. */
     if (g_USB_DeviceState == USB_STATE_CONFIGURED) {
         Receiver_Log_Event(RX_LOG_USB_CONFIGURED, KBD_RECEIVER_STARTUP_STAGE, 0u);
-        Receiver_Log_SetCompletedStage(0u);
         usb_configured_logged = true;
     }
 
@@ -56,7 +55,6 @@ int main(void)
     while (1) {
         if (!usb_configured_logged && g_USB_DeviceState == USB_STATE_CONFIGURED) {
             Receiver_Log_Event(RX_LOG_USB_CONFIGURED, KBD_RECEIVER_STARTUP_STAGE, 0u);
-            Receiver_Log_SetCompletedStage(0u);
             usb_configured_logged = true;
         }
 #if KBD_RECEIVER_STARTUP_STAGE >= 2
