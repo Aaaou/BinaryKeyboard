@@ -421,8 +421,8 @@ void USB_Device_TransferProcess(void)
                     if (g_SetupReqInterface == INTF_CONFIG && len > 0)
                     {
                         // 配置接口 SET_REPORT - 调用命令处理
-                        USB_ConfigReport_t *report = (USB_ConfigReport_t *)pEP0_DataBuf;
-                        USB_Config_ProcessCommand(report);
+                        const USB_ConfigReport_t *report = (const USB_ConfigReport_t *)pEP0_DataBuf;
+                        USB_Config_ProcessCommand(report, len);
                     }
                 }
                 R8_UEP0_CTRL = UEP_R_RES_ACK | UEP_T_RES_NAK;
@@ -487,6 +487,7 @@ void USB_Device_TransferProcess(void)
         R8_UEP4_CTRL = UEP_R_RES_ACK | UEP_T_RES_NAK;
         R8_USB_INT_FG = RB_UIF_BUS_RST;
         g_USB_DeviceState = USB_STATE_DEFAULT;
+        USB_Config_ResetQueues();
         if (USB_Device_ShouldWakeKeyboard())
         {
             KBD_Mode_RequestWake();

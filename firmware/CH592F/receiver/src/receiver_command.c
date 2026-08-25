@@ -1,6 +1,4 @@
 #include "kbd_command.h"
-#include "kbd_iap.h"
-#include "iap_config.h"
 #include "kbd_types.h"
 #include "kbd_mode_config.h"
 #include "usb_hid.h"
@@ -11,20 +9,20 @@
 static bool s_deferred_response;
 static uint8_t s_deferred_cmd;
 static uint8_t s_deferred_sub;
-static bool s_deferred_iap;
-static kbd_cmd_frame_t s_deferred_iap_frame;
+
+/* Reserved command range. The production receiver is ISP-only and must
+ * return a deterministic error to legacy Studio builds that still probe IAP. */
+enum {
+    RECEIVER_CMD_IAP_INFO = 0x80,
+    RECEIVER_CMD_IAP_PREPARE = 0x81,
+    RECEIVER_CMD_IAP_WRITE = 0x82,
+    RECEIVER_CMD_IAP_VERIFY = 0x83,
+    RECEIVER_CMD_IAP_ACTIVATE = 0x84,
+};
 
 void Receiver_Command_ProcessDeferred(void)
 {
     int result;
-    if (s_deferred_iap) {
-        kbd_cmd_frame_t frame = s_deferred_iap_frame;
-        s_deferred_iap = false;
-        if (frame.cmd == KBD_CMD_IAP_PREPARE) {
-            Receiver_Radio_SetIapBusy(true);
-        }
-        KBD_IAP_Process(&frame);
-    }
     if (!s_deferred_response || !Receiver_Radio_TakeControlResult(&result)) return;
     uint8_t resp = result == 0 ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
     KBD_Command_SendResponse(s_deferred_cmd, s_deferred_sub, &resp, 1);
@@ -54,26 +52,14 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
         return -1;
     }
     switch (frame->cmd) {
-    case KBD_CMD_IAP_INFO:
-        KBD_IAP_Process(frame);
-        return 0;
-    case KBD_CMD_IAP_PREPARE:
-    case KBD_CMD_IAP_WRITE:
-    case KBD_CMD_IAP_VERIFY:
-    case KBD_CMD_IAP_ACTIVATE:
-        if (s_deferred_iap || s_deferred_response ||
-            (frame->cmd != KBD_CMD_IAP_PREPARE &&
-             !Receiver_Radio_IsIapBusy())) {
-            resp[0] = KBD_RESP_ERR_BUSY;
-            KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
-            return -1;
-        }
-        /* Flash and RF operations run in the main loop, never in the USB
-         * interrupt callback. The host sends the next block only after this
-         * command's response arrives, so a single pending frame is enough. */
-        memcpy(&s_deferred_iap_frame, frame, sizeof(s_deferred_iap_frame));
-        s_deferred_iap = true;
-        return 0;
+    case RECEIVER_CMD_IAP_INFO:
+    case RECEIVER_CMD_IAP_PREPARE:
+    case RECEIVER_CMD_IAP_WRITE:
+    case RECEIVER_CMD_IAP_VERIFY:
+    case RECEIVER_CMD_IAP_ACTIVATE:
+        resp[0] = KBD_RESP_ERR_INVALID;
+        KBD_Command_SendResponse(frame->cmd, frame->sub, resp, 1);
+        return -1;
     case KBD_CMD_SYS_INFO:
         resp[1]=(uint8_t)(KBD_VENDOR_ID>>8); resp[2]=(uint8_t)KBD_VENDOR_ID;
         resp[3]=0x21; resp[4]=0x08;

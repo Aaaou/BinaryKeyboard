@@ -204,7 +204,7 @@ if(KBD_RECEIVER_BUILD)
     set(CH592_SOURCES
         receiver/src/main.c receiver/src/receiver_radio.c receiver/src/receiver_command.c receiver/src/receiver_log.c
         receiver/src/receiver_mode_stubs.c ble/hid/src/kbd_radio_protocol.c
-        keyboard/src/kbd_iap.c hal/src/hal_utils.c
+        hal/src/hal_utils.c
         radio_fast/src/rf_fast.c radio_fast/src/radio_platform_stubs.c
         usb/src/usb_descriptors.c usb/src/usb_device.c usb/src/usb_hid.c
         SDK/StdPeriphDriver/CH59x_clk.c SDK/StdPeriphDriver/CH59x_gpio.c

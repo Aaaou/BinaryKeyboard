@@ -114,6 +114,10 @@ tools/scripts/wchisp.exe
 tools/scripts/.binarykeyboard_console_state.json
 eeprom_dump.bin
 
+# CH592F receiver uses a separate immutable JumpIAP cache so it cannot reuse
+# the keyboard JumpIAP target during full-image generation.
+firmware/CH592F/jump_iap/build-receiver-immutable/
+
 # Windows reserved name (accidental create)
 nul
 

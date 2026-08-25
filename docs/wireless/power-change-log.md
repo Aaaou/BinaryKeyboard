@@ -70,3 +70,16 @@
 - Studio 协议与布局测试共 74 项通过。
 - full HEX 已确认包含 `0x00000` JumpIAP、`0x01000` app 和 `0x6D000` IAP。
 - 尚未完成所有型号在 LIGHT/DEEP 下的实体硬件连续按键测试。
+
+## 2026-08-25 低功耗入口校验
+
+- DEEP 入口在关闭 USB Device、移除 D+ 上拉、关闭 USB/RTC/电池唤醒源并清除
+  pending IRQ 后再执行 `LowPower_Shutdown(0)`，避免 BLE 模式保留的 Vendor HID
+  外设或残留中断把芯片立即拉回运行态。
+- 启动最早阶段恢复 WCH 低功耗示例的全 GPIO 上拉；按键、USB、ADC、RGB 和旋钮
+  初始化随后覆盖各自引脚，未使用 GPIO 不再浮空。
+- 休眠判定没有回退：USB 仅在严格 `USB_STATE_CONFIGURED` 时阻止自动休眠，
+  `auto_sleep_min=0` 仍禁用 LIGHT，`deep_sleep_min=0` 仍禁用 DEEP。
+- 实机冷启动后测得 DEEP 静态电流约 **4.7 µA**。烧录器“烧录完成后直接运行”
+  可能保留 USB/复位瞬态；功耗测试应在重新复位或断电上电后进行，不能把该瞬态
+  误判为固件不进休眠。

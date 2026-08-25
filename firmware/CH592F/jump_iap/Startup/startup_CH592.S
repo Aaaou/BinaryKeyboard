@@ -109,4 +109,8 @@ WDOG_BAT_IRQHandler:
 	.weak	handle_reset
 	.align	1
 handle_reset:
+#ifdef KBD_RECEIVER_IMMUTABLE
+	j	0x01000
+#else
 	j	0x6D000
+#endif

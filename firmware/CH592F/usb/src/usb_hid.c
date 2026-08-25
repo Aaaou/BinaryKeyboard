@@ -19,6 +19,25 @@
  * 60 MHz RISC-V 下 ~10 cycles/iter → 200 000 iter ≈ 33 ms，覆盖 2 个
  * 轮询周期，避免 KBD_Log_Flush 占用 EP4 IN 时 MACRO_SET 响应被丢弃。 */
 #define USB_EP_READY_TIMEOUT 200000U
+#define USB_CONFIG_QUEUE_DEPTH 4u
+
+typedef struct {
+    kbd_cmd_frame_t frame;
+    uint8_t valid;
+} usb_config_rx_item_t;
+
+typedef struct {
+    uint8_t cmd;
+    uint8_t len;
+    uint8_t data[63];
+} usb_config_tx_item_t;
+
+static usb_config_rx_item_t s_config_rx_queue[USB_CONFIG_QUEUE_DEPTH];
+static usb_config_tx_item_t s_config_tx_queue[USB_CONFIG_QUEUE_DEPTH];
+static volatile uint8_t s_config_rx_head;
+static volatile uint8_t s_config_rx_tail;
+static volatile uint8_t s_config_tx_head;
+static volatile uint8_t s_config_tx_tail;
 
 /* ==================== Global Variables ==================== */
 USB_KeyboardReport_t g_KeyboardReport = {0};
@@ -289,49 +308,96 @@ bool USB_Consumer_TrySend(const USB_ConsumerReport_t *report)
 void USB_Config_Init(void)
 {
     memset(&g_ConfigReport, 0, sizeof(USB_ConfigReport_t));
+    USB_Config_ResetQueues();
 }
 
 /**
  * @brief 发送配置响应
  */
-void USB_Config_SendResponse(uint8_t cmd, uint8_t *data, uint8_t len)
+void USB_Config_SendResponse(uint8_t cmd, const uint8_t *data, uint8_t len)
 {
-    // 等待上一次传输完成（带超时，避免异常状态卡死）
-    if (!USB_WaitEPInReady(4)) {
-        return;
+    uint8_t copy_len = (len > 63u) ? 63u : len;
+    uint8_t next = (uint8_t)((s_config_tx_head + 1u) % USB_CONFIG_QUEUE_DEPTH);
+    if (next == s_config_tx_tail) return;
+
+    s_config_tx_queue[s_config_tx_head].cmd = cmd;
+    s_config_tx_queue[s_config_tx_head].len = copy_len;
+    memset(s_config_tx_queue[s_config_tx_head].data, 0,
+           sizeof(s_config_tx_queue[s_config_tx_head].data));
+    if (data && copy_len != 0u) {
+        memcpy(s_config_tx_queue[s_config_tx_head].data, data, copy_len);
     }
-    
-    g_ConfigReport.cmd = cmd;
-    memset(g_ConfigReport.data, 0, sizeof(g_ConfigReport.data));
-    
-    if(data && len > 0) {
-        uint8_t copy_len = (len > 63) ? 63 : len;
-        memcpy(g_ConfigReport.data, data, copy_len);
-    }
-    
-    memcpy(pEP4_IN_DataBuf, &g_ConfigReport, sizeof(USB_ConfigReport_t));
-    DevEP4_IN_Deal(sizeof(USB_ConfigReport_t));
+    s_config_tx_head = next;
 }
 
 /**
  * @brief 处理配置命令
  */
-void USB_Config_ProcessCommand(USB_ConfigReport_t *report)
+void USB_Config_ProcessCommand(const USB_ConfigReport_t *report, uint8_t report_len)
 {
-    /* 
-     * 帧格式: [CMD][SUB][LEN][DATA...]
-     * report->cmd = CMD
-     * report->data[0] = SUB
-     * report->data[1] = LEN
-     * report->data[2+] = DATA
-     */
-    kbd_cmd_frame_t frame;
-    frame.cmd = report->cmd;
-    frame.sub = report->data[0];
-    frame.len = report->data[1];  /* 使用包中的实际长度 */
-    memcpy(frame.data, &report->data[2], sizeof(frame.data));  /* 跳过 SUB 和 LEN，复制完整 DATA (61B) */
+    uint8_t next = (uint8_t)((s_config_rx_head + 1u) % USB_CONFIG_QUEUE_DEPTH);
+    if (!report || next == s_config_rx_tail) return;
 
-    KBD_Command_Process(&frame);
+    /* A short/long HID report cannot be parsed as a command frame. Preserve
+     * only the fields that are physically present and let the main loop send
+     * a normal parameter error; never read beyond the received report. */
+    if (report_len != sizeof(USB_ConfigReport_t)) {
+        usb_config_rx_item_t *item = &s_config_rx_queue[s_config_rx_head];
+        memset(item, 0, sizeof(*item));
+        if (report_len >= 1u) item->frame.cmd = report->cmd;
+        if (report_len >= 2u) item->frame.sub = report->data[0];
+        item->valid = 0u;
+        s_config_rx_head = next;
+        return;
+    }
+
+    usb_config_rx_item_t *item = &s_config_rx_queue[s_config_rx_head];
+    memset(item, 0, sizeof(*item));
+    item->frame.cmd = report->cmd;
+    item->frame.sub = report->data[0];
+    item->frame.len = report->data[1];
+    memcpy(item->frame.data, &report->data[2], sizeof(item->frame.data));
+    item->valid = item->frame.len <= sizeof(item->frame.data);
+    s_config_rx_head = next;
+}
+
+void USB_Config_ProcessPending(void)
+{
+    if (s_config_rx_head == s_config_rx_tail) return;
+
+    usb_config_rx_item_t item;
+    item = s_config_rx_queue[s_config_rx_tail];
+    s_config_rx_tail = (uint8_t)((s_config_rx_tail + 1u) % USB_CONFIG_QUEUE_DEPTH);
+
+    if (!item.valid) {
+        const uint8_t response = KBD_RESP_ERR_PARAM;
+        KBD_Command_SendResponse(item.frame.cmd, item.frame.sub, &response, 1u);
+        return;
+    }
+    KBD_Command_Process(&item.frame);
+}
+
+void USB_Config_ProcessPendingTx(void)
+{
+    if (s_config_tx_head == s_config_tx_tail || !EP4_GetINSta()) return;
+
+    usb_config_tx_item_t item;
+    item = s_config_tx_queue[s_config_tx_tail];
+    s_config_tx_tail = (uint8_t)((s_config_tx_tail + 1u) % USB_CONFIG_QUEUE_DEPTH);
+
+    g_ConfigReport.cmd = item.cmd;
+    memset(g_ConfigReport.data, 0, sizeof(g_ConfigReport.data));
+    memcpy(g_ConfigReport.data, item.data, item.len);
+    memcpy(pEP4_IN_DataBuf, &g_ConfigReport, sizeof(USB_ConfigReport_t));
+    DevEP4_IN_Deal(sizeof(USB_ConfigReport_t));
+}
+
+void USB_Config_ResetQueues(void)
+{
+    s_config_rx_head = 0u;
+    s_config_rx_tail = 0u;
+    s_config_tx_head = 0u;
+    s_config_tx_tail = 0u;
 }
 
 /* ==================== USB Device Callbacks ==================== */
@@ -373,9 +439,9 @@ void USB_DevEP4_IN_Callback(void)
  */
 void DevEP4_OUT_Deal(uint8_t len)
 {
-    if(len >= sizeof(USB_ConfigReport_t)) {
-        USB_ConfigReport_t *report = (USB_ConfigReport_t *)pEP4_OUT_DataBuf;
-        USB_Config_ProcessCommand(report);
+    if (len > 0u && len <= sizeof(USB_ConfigReport_t)) {
+        const USB_ConfigReport_t *report = (const USB_ConfigReport_t *)pEP4_OUT_DataBuf;
+        USB_Config_ProcessCommand(report, len);
     }
 }
 

@@ -364,7 +364,6 @@ def release_artifact_manifest(build_number: int | None = None) -> tuple[dict[str
             return {
                 "channel": "release",
                 "version": version,
-                "appBinUrl": f"{base_url}/firmware/ch592f/CH592F-RECEIVER-app.bin",
                 "fullBinUrl": f"{base_url}/firmware/ch592f/CH592F-RECEIVER-full.bin",
             }
         return {

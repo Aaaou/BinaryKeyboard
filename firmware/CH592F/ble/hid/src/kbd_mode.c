@@ -806,6 +806,22 @@ static void KBD_Mode_EnterDeepSleep(void)
     /* 持久化（Shutdown 之后 RAM 不保留） */
     KBD_Storage_FlushRuntime();
 
+    /*
+     * Wireless builds keep Vendor HID initialized for Studio even without a
+     * cable. The pre-April BLE firmware did not initialize USB in wireless
+     * mode. Remove the USB PHY, D+ pull-up and interrupt source before
+     * shutdown; wake resets the MCU and initializes USB again when required.
+    */
+    USB_Device_Deinit();
+
+    /* DEEP is intentionally GPIO-only. Remove stale peripheral wake and IRQ
+     * state so __WFI cannot immediately fall through into the wake reset path. */
+    PWR_PeriphWakeUpCfg(DISABLE,
+                        RB_SLP_USB_WAKE | RB_SLP_RTC_WAKE | RB_SLP_BAT_WAKE,
+                        Long_Delay);
+    PFIC_ClearPendingIRQ(USB_IRQn);
+    PFIC_ClearPendingIRQ(RTC_IRQn);
+
     /* 配置按键低电平作为 GPIO 唤醒源 */
     Key_ConfigDeepSleepWakeup();
 

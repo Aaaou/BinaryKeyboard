@@ -207,8 +207,11 @@ bool USB_Consumer_TrySend(const USB_ConsumerReport_t *report);
 
 /* === Config Functions === */
 void USB_Config_Init(void);
-void USB_Config_SendResponse(uint8_t cmd, uint8_t *data, uint8_t len);
-void USB_Config_ProcessCommand(USB_ConfigReport_t *report);
+void USB_Config_SendResponse(uint8_t cmd, const uint8_t *data, uint8_t len);
+void USB_Config_ProcessCommand(const USB_ConfigReport_t *report, uint8_t report_len);
+void USB_Config_ProcessPending(void);
+void USB_Config_ProcessPendingTx(void);
+void USB_Config_ResetQueues(void);
 
 /* === USB Device Callbacks === */
 void USB_DevEP1_IN_Callback(void);   // Keyboard

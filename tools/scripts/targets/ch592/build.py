@@ -240,6 +240,8 @@ def artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
 def user_facing_artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
     """Only the artifacts that matter to the user (for build-full output)."""
     a = artifact_paths(build_dir, keyboard)
+    if keyboard == "RECEIVER":
+        return {"full_hex": a["full_hex"], "full_bin": a["full_bin"]}
     return {
         "full_hex": a["full_hex"],
         "full_bin": a["full_bin"],
@@ -578,6 +580,7 @@ def emit_size_json(keyboard: str, profile: str, out: Path) -> int:
 
 IAP_BUILD_DIR = IAP_DIR / "build"
 JUMPIAP_BUILD_DIR = JUMPIAP_DIR / "build"
+JUMPIAP_IMMUTABLE_BUILD_DIR = JUMPIAP_DIR / "build-receiver-immutable"
 
 
 def bootloader_configure() -> Path:
@@ -639,16 +642,16 @@ def bootloader_hex_path() -> Path:
     return IAP_BUILD_DIR / "CH592F_IAP.hex"
 
 
-def jumpiap_configure() -> Path:
+def jumpiap_configure(immutable: bool = False) -> Path:
     cmake = find_cmake()
     if not cmake:
         die("CMake not found. Install CMake or add it to PATH.")
 
-    build_dir = JUMPIAP_BUILD_DIR
+    build_dir = JUMPIAP_IMMUTABLE_BUILD_DIR if immutable else JUMPIAP_BUILD_DIR
     build_dir.mkdir(parents=True, exist_ok=True)
     sep()
-    info("Configuring CH592F JumpIAP stub")
-    run([
+    info("Configuring CH592F immutable receiver jump" if immutable else "Configuring CH592F JumpIAP stub")
+    args = [
         str(cmake),
         "-S", str(JUMPIAP_DIR),
         "-B", str(build_dir),
@@ -656,23 +659,26 @@ def jumpiap_configure() -> Path:
         f"-DCMAKE_TOOLCHAIN_FILE={FIRMWARE_DIR / 'cmake' / 'toolchain-ch59x.cmake'}",
         "-DCMAKE_BUILD_TYPE=MinSizeRel",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-    ], cwd=PROJECT_ROOT)
+    ]
+    if immutable:
+        args.append("-DKBD_RECEIVER_IMMUTABLE=ON")
+    run(args, cwd=PROJECT_ROOT)
     ok(f"JumpIAP configure complete → {build_dir}")
     return build_dir
 
 
-def jumpiap_build() -> Path:
+def jumpiap_build(immutable: bool = False) -> Path:
     cmake = find_cmake()
     if not cmake:
         die("CMake not found. Install CMake or add it to PATH.")
 
-    build_dir = JUMPIAP_BUILD_DIR
+    build_dir = JUMPIAP_IMMUTABLE_BUILD_DIR if immutable else JUMPIAP_BUILD_DIR
     cache_file = build_dir / "CMakeCache.txt"
     if not _ninja_build_files_ready(build_dir):
-        jumpiap_configure()
+        jumpiap_configure(immutable=immutable)
 
     sep()
-    info("Building CH592F JumpIAP stub")
+    info("Building CH592F immutable receiver jump" if immutable else "Building CH592F JumpIAP stub")
     lines, elapsed = run_and_capture([str(cmake), "--build", str(build_dir)], cwd=PROJECT_ROOT)
 
     bin_path = build_dir / "CH592F_JumpIAP.bin"
@@ -685,17 +691,20 @@ def jumpiap_build() -> Path:
 
 
 def jumpiap_clean() -> None:
-    build_dir = JUMPIAP_BUILD_DIR
     sep()
-    if build_dir.is_dir():
-        shutil.rmtree(build_dir)
-        ok(f"Removed {build_dir}")
-    else:
-        warn(f"Build directory does not exist: {build_dir}")
+    removed = False
+    for build_dir in (JUMPIAP_BUILD_DIR, JUMPIAP_IMMUTABLE_BUILD_DIR):
+        if build_dir.is_dir():
+            shutil.rmtree(build_dir)
+            ok(f"Removed {build_dir}")
+            removed = True
+    if not removed:
+        warn("JumpIAP build directories do not exist")
 
 
-def jumpiap_hex_path() -> Path:
-    return JUMPIAP_BUILD_DIR / "CH592F_JumpIAP.hex"
+def jumpiap_hex_path(immutable: bool = False) -> Path:
+    build_dir = JUMPIAP_IMMUTABLE_BUILD_DIR if immutable else JUMPIAP_BUILD_DIR
+    return build_dir / "CH592F_JumpIAP.hex"
 
 
 # ── Intel HEX merge ──────────────────────────────────────────────────────
@@ -851,15 +860,24 @@ def _hex_to_bin(hex_path: Path, bin_path: Path) -> None:
 
 
 def build_full(keyboard: str, profile: str, build_number: int | None = None) -> Path:
-    """Build JumpIAP + app + IAP app, then merge into a single -full.hex for ISP."""
+    """Build a complete ISP image.
+
+    The receiver is deliberately different from a keyboard: its immutable
+    jump goes straight to the application and no high-address IAP image is
+    linked or published. Keyboard builds retain the historical JumpIAP/IAP
+    layout and artifacts.
+    """
     keyboard = _normalize_keyboard(keyboard)
     profile = _normalize_profile(profile)
     if build_number is not None:
         os.environ["BK_BUILD_NUMBER"] = str(build_number)
 
-    # 1. Build JumpIAP stub + high-flash IAP app
-    jumpiap_build()
-    bootloader_build()
+    receiver_immutable = keyboard == "RECEIVER"
+
+    # 1. Build the appropriate first-stage image. The receiver has no OTA/IAP.
+    jumpiap_build(immutable=receiver_immutable)
+    if not receiver_immutable:
+        bootloader_build()
 
     # 2. Build app
     # The generated header is timestamp-based in CMake, so changing only the
@@ -873,41 +891,43 @@ def build_full(keyboard: str, profile: str, build_number: int | None = None) -> 
     app_build_dir = build(keyboard, profile)
 
     # 3. Merge hex
-    jump_hex = jumpiap_hex_path()
-    iap_hex = bootloader_hex_path()
+    jump_hex = jumpiap_hex_path(immutable=receiver_immutable)
+    iap_hex = bootloader_hex_path() if not receiver_immutable else None
     arts = artifact_paths(app_build_dir, keyboard)
     app_hex = arts["hex"]
     stage_hex = app_build_dir / ".merge-stage.hex"
 
     sep()
-    info("Merging JumpIAP + app + IAP → full HEX")
-    merge_hex(jump_hex, app_hex, stage_hex)
-    merge_hex(stage_hex, iap_hex, arts["full_hex"], fill_gaps_with=0xFF)
+    if receiver_immutable:
+        info("Merging immutable receiver jump + app → full HEX")
+        merge_hex(jump_hex, app_hex, arts["full_hex"], fill_gaps_with=0xFF)
+    else:
+        info("Merging JumpIAP + app + IAP → full HEX")
+        merge_hex(jump_hex, app_hex, stage_hex)
+        merge_hex(stage_hex, iap_hex, arts["full_hex"], fill_gaps_with=0xFF)
     if stage_hex.is_file():
         stage_hex.unlink()
 
     # 4. Generate full .bin from merged hex
     _hex_to_bin(arts["full_hex"], arts["full_bin"])
 
-    # 5. Copy IAP artifacts with keyboard-prefixed names
-    boot_build = IAP_BUILD_DIR
-    for suffix in ("hex", "bin"):
-        src = boot_build / f"CH592F_IAP.{suffix}"
-        dst = arts[f"iap_{suffix}"]
-        if src.is_file():
-            shutil.copy2(src, dst)
+    # 5. Copy IAP artifacts only for keyboard builds.
+    if not receiver_immutable:
+        boot_build = IAP_BUILD_DIR
+        for suffix in ("hex", "bin"):
+            src = boot_build / f"CH592F_IAP.{suffix}"
+            dst = arts[f"iap_{suffix}"]
+            if src.is_file():
+                shutil.copy2(src, dst)
 
     # 6. Print user-facing artifacts
     sep()
     info("Build artifacts:")
-    for label, key in [
-        ("FULL HEX (ISP)", "full_hex"),
-        ("FULL BIN (ISP)", "full_bin"),
-        ("IAP HEX", "iap_hex"),
-        ("IAP BIN", "iap_bin"),
-        ("APP HEX (OTA)", "hex"),
-        ("APP BIN (OTA)", "bin"),
-    ]:
+    labels = [("FULL HEX (ISP)", "full_hex"), ("FULL BIN (ISP)", "full_bin")]
+    if not receiver_immutable:
+        labels += [("IAP HEX", "iap_hex"), ("IAP BIN", "iap_bin"),
+                   ("APP HEX (OTA)", "hex"), ("APP BIN (OTA)", "bin")]
+    for label, key in labels:
         path = arts[key]
         if path.is_file():
             ok(f"{label:16s} → {_c('32;1', path.name)}  ({path.stat().st_size:,} B)")

@@ -19,6 +19,7 @@
 #include "kbd_command.h"
 #include "kbd_rgb.h"
 #include "kbd_log.h"
+#include "usb_hid.h"
 
 /* 硬件抽象层 */
 #include "key.h"
@@ -43,6 +44,8 @@ __attribute__((noinline)) void Main_Circulation(void)
 {
     while (1) {
         TMOS_SystemProcess();
+        USB_Config_ProcessPending();
+        USB_Config_ProcessPendingTx();
         KBD_Mode_Process();
 #if KBD_RADIO_2G4_ENABLED
         /* RFBound shares TMOS/Timer3. Keep visual timing independent from RF
@@ -66,6 +69,16 @@ int main(void)
     uint32_t deep_wake_gpioa_flags = GPIOA_ReadITFlagPort();
     uint32_t deep_wake_gpiob_flags = GPIOB_ReadITFlagPort();
     SYS_ResetKeepBuf(0u);
+
+#if (defined(HAL_SLEEP)) && (HAL_SLEEP == TRUE)
+    /*
+     * Match the WCH low-power examples: give every otherwise-unused digital
+     * input a defined level. Peripheral initializers below override the pins
+     * they own (keys, USB, RGB, battery and encoder).
+     */
+    GPIOA_ModeCfg(GPIO_Pin_All, GPIO_ModeIN_PU);
+    GPIOB_ModeCfg(GPIO_Pin_All, GPIO_ModeIN_PU);
+#endif
 
 #if (defined(DCDC_ENABLE)) && (DCDC_ENABLE == TRUE)
     /* 启用内部 DCDC，节省核心功耗（约 30%） */

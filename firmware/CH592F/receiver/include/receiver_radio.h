@@ -30,7 +30,4 @@ uint16_t Receiver_Radio_GetReleaseBusyCount(void);
 uint16_t Receiver_Radio_GetPollRate(void);
 int Receiver_Radio_SetPollRate(uint16_t rate);
 bool Receiver_Radio_TakeControlResult(int *result);
-/* USB IAP owns the device while Image B is being erased/written/verified. */
-void Receiver_Radio_SetIapBusy(bool busy);
-bool Receiver_Radio_IsIapBusy(void);
 #endif
