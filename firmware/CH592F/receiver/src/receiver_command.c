@@ -112,6 +112,17 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
             KBD_Command_SendResponse(frame->cmd, frame->sub, &busy, 1);
             return -1;
         }
+        /* Do not install a new callback over the transaction currently using
+         * the tunnel. The previous implementation overwrote that callback,
+         * then SendManagement rejected the new request and ResetManagement
+         * destroyed both transactions. */
+        if (Receiver_Radio_ManagementBusy()) {
+            Receiver_Log_Event(RX_LOG_MGMT_REJECT, KBD_RECEIVER_STARTUP_STAGE,
+                               frame->cmd);
+            uint8_t busy = KBD_RESP_ERR_BUSY;
+            KBD_Command_SendResponse(frame->cmd, frame->sub, &busy, 1u);
+            return -1;
+        }
         s_mgmt_transaction++;
         if (!s_mgmt_transaction) s_mgmt_transaction = 1;
         s_mgmt_command = frame->cmd;

@@ -109,12 +109,30 @@ static struct {
 } s_mgmt_tx;
 static bool s_mgmt_ack_pending;
 static kbd_radio_mgmt_ack_t s_mgmt_ack;
+static volatile bool s_mgmt_session_reset_pending;
 static uint16_t s_mgmt_rx_count;
 static uint16_t s_mgmt_exec_count;
 static uint16_t s_mgmt_response_tx_count;
 static uint32_t rf_rtc_elapsed(uint32_t now, uint32_t then);
 static int rf_send(const uint8_t *data, uint8_t len);
 static int rf_send_management(const uint8_t *data, uint8_t len);
+
+static void mgmt_reset_session(void)
+{
+    memset(&s_mgmt_rx, 0, sizeof(s_mgmt_rx));
+    memset(&s_mgmt_tx, 0, sizeof(s_mgmt_tx));
+    s_mgmt_command_pending = false;
+    s_mgmt_ack_pending = false;
+    memset(&s_mgmt_ack, 0, sizeof(s_mgmt_ack));
+    s_mgmt_started = 0u;
+    s_mgmt_last_request_valid = false;
+    s_mgmt_last_transaction = 0u;
+    s_mgmt_last_command = 0u;
+    s_mgmt_last_sub = 0u;
+    s_mgmt_last_completed = 0u;
+    s_mgmt_last_response_len = 0u;
+    memset(s_mgmt_last_response, 0, sizeof(s_mgmt_last_response));
+}
 
 static void mgmt_send_response(const uint8_t *frame, uint8_t len)
 {
@@ -383,6 +401,7 @@ static int rf_nv_save(void)
 static void rf_bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
+        s_mgmt_session_reset_pending = true;
         bool binding_changed = s_device_id != status->devId ||
                                memcmp(s_peer_id, status->PeerInfo, sizeof(s_peer_id)) != 0;
         s_device_id = status->devId;
@@ -406,6 +425,7 @@ static void rf_bound_cb(staBound_t *status)
          * peer exists but the RF session is not ready yet. */
         s_state = KBD_RADIO_PAIR_CONNECTED;
     } else if (status->status == bleTimeout) {
+        s_mgmt_session_reset_pending = true;
         /* WCH documents bleTimeout as an internal reconnect/bindable
          * transition. Only an explicit pairing session owns the pairing
          * window; an already-bound keyboard remains bound here. */
@@ -420,6 +440,7 @@ static void rf_bound_cb(staBound_t *status)
             }
         }
     } else {
+        s_mgmt_session_reset_pending = true;
         s_rf_ready = false;
         s_disconnect_pending = false;
         if (s_pair_backup_valid) {
@@ -734,6 +755,13 @@ int KBD_Radio2G4_SendConsumerReport(uint16_t key)
 }
 void KBD_Radio2G4_Process(void)
 {
+    if (s_mgmt_session_reset_pending) {
+        uint32_t irq;
+        SYS_DisableAllIrq(&irq);
+        s_mgmt_session_reset_pending = false;
+        SYS_RecoverIrq(irq);
+        mgmt_reset_session();
+    }
     /* Read management RX first, then prioritize its ACK. This keeps a
      * previous response from blocking execution of the next browser command. */
     s_rf_rx_pending = false;

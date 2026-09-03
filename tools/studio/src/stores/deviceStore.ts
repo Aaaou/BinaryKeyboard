@@ -106,6 +106,7 @@ export const useDeviceStore = defineStore("device", () => {
   let _pollInFlight = false;
   /** 轮询周期计数 (用于电压低频采样) */
   let _pollTick = 0;
+  let _remoteRecoveryAfter = 0;
 
   function cloneKeymapConfig(config: KeymapConfig): KeymapConfig {
     return JSON.parse(JSON.stringify(config)) as KeymapConfig;
@@ -859,12 +860,30 @@ export const useDeviceStore = defineStore("device", () => {
         try {
           const pair = await hidService.getPairStatus();
           const linked = pair.state === 'connected' && pair.linkConfirmed !== false;
-          remoteTargetLoaded.value = linked || (pair.hasPeer === true && remoteTargetLoaded.value);
+          remoteTargetReady.value = linked;
           if (deviceStatus.value) {
             deviceStatus.value = {
               ...deviceStatus.value,
               connectionState: linked ? 1 : 0,
             };
+          }
+          /* Pair identity persists, but management transactions do not. After
+           * RFBound creates a fresh link, rediscover a target whose previous
+           * initialization failed instead of remaining receiver-only. */
+          if (linked && !remoteTargetLoaded.value && Date.now() >= _remoteRecoveryAfter) {
+            try {
+              remoteDeviceInfo.value = await hidService.getRemoteDeviceInfo();
+              remoteTargetLoaded.value = true;
+              remoteLayoutKnown.value = true;
+              await refreshKeymap();
+              if (supportsRgb.value) await refreshRgbConfig();
+              if (supportsFnKeys.value) await refreshFnKeyConfig();
+              if (supportsOsMode.value) await refreshOsMode();
+            } catch {
+              remoteTargetLoaded.value = false;
+              remoteLayoutKnown.value = false;
+              _remoteRecoveryAfter = Date.now() + 5000;
+            }
           }
         } catch {
           /* Preserve the last known RF state on a single diagnostic miss. */
@@ -933,6 +952,7 @@ export const useDeviceStore = defineStore("device", () => {
   function startStatusPolling(): void {
     stopStatusPolling();
     _pollTick = 0;
+    _remoteRecoveryAfter = 0;
     if (supportsBattery.value && (!capabilities.value.receiverRole || keymapLoaded.value)) {
       hidService
         .getBattery()
@@ -960,6 +980,7 @@ export const useDeviceStore = defineStore("device", () => {
       _pollTimer = null;
     }
     _pollInFlight = false;
+    _remoteRecoveryAfter = 0;
   }
 
   return {

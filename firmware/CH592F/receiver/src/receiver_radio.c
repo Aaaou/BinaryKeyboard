@@ -94,6 +94,7 @@ static uint8_t s_local[6];
 static volatile bool s_rx_pending;
 static volatile bool s_binding_pending;
 static volatile bool s_release_pending;
+static volatile bool s_management_session_reset_pending;
 static volatile receiver_control_t s_control_pending;
 static volatile uint16_t s_requested_poll_rate;
 static volatile bool s_control_complete;
@@ -150,6 +151,7 @@ static uint16_t s_keyboard_usb_busy_count;
 #define RX_MGMT_TX_REPEATS 3u
 extern RF_DMADESCTypeDef *pDMARxGet;
 extern RF_DMADESCTypeDef *pDMATxGet;
+extern RF_DMADESCTypeDef DMATxDscrTab[RF_TXBUFNB];
 static uint32_t s_session;
 static uint32_t s_sequence;
 static receiver_radio_mgmt_response_cb_t s_mgmt_callback;
@@ -167,6 +169,21 @@ static struct {
 } s_mgmt_tx;
 static bool s_mgmt_ack_pending;
 static kbd_radio_mgmt_ack_t s_mgmt_ack;
+
+static void reset_management_session(bool notify_waiter, bool clear_capabilities);
+
+static void reset_host_tx_ring(void)
+{
+    if (s_nv.device_id <= 6u) RFRole_ClearTxData(s_nv.device_id);
+    uint32_t irq;
+    SYS_DisableAllIrq(&irq);
+    for (uint8_t i = 0u; i < RF_TXBUFNB; i++) {
+        DMATxDscrTab[i].Status = 0u;
+        DMATxDscrTab[i].BufferSize = RF_TX_BUF_SZE + PKT_HEAD_LEN;
+    }
+    pDMATxGet = DMATxDscrTab;
+    SYS_RecoverIrq(irq);
+}
 
 static int receiver_rf_enqueue(const uint8_t *data, uint8_t len)
 {
@@ -320,6 +337,10 @@ static void apply_filter(receiver_filter_mode_t mode)
 static void bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
+        /* SUCCESS starts a new RFBound session, even when it reconnects the
+         * same persisted peer. Management fragments and callbacks belong to
+         * the old session and must never survive into the new one. */
+        s_management_session_reset_pending = true;
         s_rf_disconnect_pending = false;
         s_rx_quarantine = false;
         s_release_repeat_active = false;
@@ -335,6 +356,7 @@ static void bound_cb(staBound_t *status)
             s_pair_success_logged = true;
         }
     } else if (status->status == bleTimeout) {
+        s_management_session_reset_pending = true;
         s_has_sequence = false;
         /* A late RFBound callback may arrive after the visible state has
          * already fallen back to BOUND. A valid application frame proves that
@@ -353,6 +375,7 @@ static void bound_cb(staBound_t *status)
             s_pair_timeout_logged = true;
         }
     } else {
+        s_management_session_reset_pending = true;
         s_has_sequence = false;
         if ((s_state == KBD_RADIO_PAIR_CONNECTED || s_last_valid_rx != 0u) &&
             !s_rf_disconnect_pending) {
@@ -890,6 +913,13 @@ uint8_t Receiver_Radio_GetHostStartupResult(void) { return s_host_startup_result
 
 void Receiver_Radio_Process(void)
 {
+    if (s_management_session_reset_pending) {
+        uint32_t irq;
+        SYS_DisableAllIrq(&irq);
+        s_management_session_reset_pending = false;
+        SYS_RecoverIrq(irq);
+        reset_management_session(true, true);
+    }
     process_binding_save();
     process_control();
     if (s_host_restart_pending) {
@@ -928,9 +958,14 @@ void Receiver_Radio_Process(void)
      * merely because no ordinary HID frame has arrived recently. */
     if (s_mgmt_callback && rtc_elapsed(RTC_GetCycle32k(), s_mgmt_started) >= RX_MGMT_TIMEOUT_TICKS) {
         receiver_radio_mgmt_response_cb_t callback = s_mgmt_callback;
+        uint8_t transaction = s_mgmt_transaction;
         Receiver_Log_Event(RX_LOG_MGMT_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE,
                            s_mgmt_command);
-        callback(s_mgmt_transaction, NULL, 0u, true);
+        callback(transaction, NULL, 0u, true);
+        /* The host TX ring contains only receiver-to-keyboard management
+         * traffic. A timed-out transaction can leave its current descriptor
+         * armed forever, causing every later request to remain at tx=0/1. */
+        reset_host_tx_ring();
         Receiver_Radio_ResetManagement();
     }
     /* Never let a repeated request starve the ACK for the previous response.
@@ -1048,6 +1083,22 @@ void Receiver_Radio_ResetManagement(void)
     s_mgmt_command = 0u;
     s_mgmt_sub = 0u;
 }
+
+static void reset_management_session(bool notify_waiter, bool clear_capabilities)
+{
+    receiver_radio_mgmt_response_cb_t callback = s_mgmt_callback;
+    uint8_t transaction = s_mgmt_transaction;
+
+    if (notify_waiter && callback) callback(transaction, NULL, 0u, true);
+    reset_host_tx_ring();
+    Receiver_Radio_ResetManagement();
+    s_mgmt_ack_pending = false;
+    memset(&s_mgmt_ack, 0, sizeof(s_mgmt_ack));
+    if (clear_capabilities) {
+        memset(s_remote_capabilities, 0, sizeof(s_remote_capabilities));
+        s_remote_capabilities_valid = false;
+    }
+}
 bool Receiver_Radio_HasRemoteCapabilities(void) { return s_remote_capabilities_valid; }
 void Receiver_Radio_GetRemoteCapabilities(uint8_t out[8])
 {
@@ -1092,14 +1143,12 @@ int Receiver_Radio_SendManagement(const kbd_cmd_frame_t *command, uint8_t transa
      * valid peer exists; the normal management timeout handles a genuinely
      * unavailable link. */
     if (!command || !s_host_active || !has_peer() || command->len > 61u) return -1;
-    /* Self-heal a transaction whose callback or DMA state survived a lost
-     * RF response. The normal Process() timeout performs the same cleanup,
-     * but doing it here guarantees the next USB command can recover even if
-     * the timeout was observed between main-loop iterations. */
-    if ((s_mgmt_callback || s_mgmt_tx.active) &&
-        rtc_elapsed(RTC_GetCycle32k(), s_mgmt_started) >= RX_MGMT_TIMEOUT_TICKS) {
-        Receiver_Radio_ResetManagement();
-    }
+    /* The caller installs the callback immediately before entering here.
+     * Treating callback presence plus the reset timestamp (zero) as a stale
+     * transaction clears that brand-new callback and creates an immortal
+     * TX-only state (diagnostic flags=0x02). Existing transactions are
+     * rejected by Receiver_Radio_ManagementBusy() before this function; their
+     * expiry remains owned by Receiver_Radio_Process(). */
     uint8_t total = (uint8_t)((command->len + 3u + KBD_RADIO_MGMT_MAX_DATA - 1u) / KBD_RADIO_MGMT_MAX_DATA); if (!total) total = 1;
     uint8_t raw[64] = { command->cmd, command->sub, command->len }; memcpy(&raw[3], command->data, command->len);
     /* The caller installs the response callback immediately before queuing

@@ -573,8 +573,15 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       return await operation();
     } catch (error) {
       if (!this.receiverProxy) throw error;
-      /* sendCommand records a cooldown after an RF timeout. Calling the same
-       * read again waits for that transaction to expire before retrying. */
+      const message = error instanceof Error ? error.message : '';
+      /* Retry only recoverable tunnel states. Protocol/validation errors must
+       * remain visible instead of issuing a duplicate command immediately. */
+      if (!/超时|失败: 0x3/.test(message)) throw error;
+      if (/失败: 0x3/.test(message)) {
+        this.receiverCooldownUntil = Math.max(this.receiverCooldownUntil, Date.now() + 3200);
+      }
+      /* sendCommand observes receiverCooldownUntil before the retry, allowing
+       * the firmware transaction deadline and RF session cleanup to finish. */
       return operation();
     }
   }
