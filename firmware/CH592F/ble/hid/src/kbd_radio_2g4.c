@@ -228,12 +228,15 @@ static void mgmt_process_frame(const kbd_radio_frame_t *radio)
         return;
     }
     memcpy(&s_mgmt_rx.data[s_mgmt_rx.length], mgmt->data, mgmt->length);
-    s_mgmt_ack = (kbd_radio_mgmt_ack_t){ KBD_RADIO_MGMT_VERSION, mgmt->transaction,
-        KBD_RADIO_FRAME_MGMT_REQUEST, mgmt->fragment };
-    s_mgmt_ack_pending = true;
     s_mgmt_rx.length += mgmt->length;
     s_mgmt_rx.next_fragment++;
     if (s_mgmt_rx.next_fragment == s_mgmt_rx.fragments) {
+        /* The command response is the acknowledgement for the final request
+         * fragment. Sending a standalone ACK and then the response in two
+         * adjacent RFBound device packets is unreliable: the host often sees
+         * the ACK (and advances TX to 1/1) but never receives the response.
+         * Intermediate fragments still need an explicit ACK so the receiver
+         * can advance a multi-fragment write request. */
         kbd_cmd_frame_t command = {0};
         if (s_mgmt_rx.length < 3u || s_mgmt_rx.data[2] > 61u ||
             (uint16_t)s_mgmt_rx.data[2] + 3u > s_mgmt_rx.length) {
@@ -251,6 +254,10 @@ static void mgmt_process_frame(const kbd_radio_frame_t *radio)
         s_mgmt_command_pending = true;
         if (s_mgmt_exec_count != 0xFFFFu) s_mgmt_exec_count++;
         KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_EXEC, command.cmd, command.len);
+    } else {
+        s_mgmt_ack = (kbd_radio_mgmt_ack_t){ KBD_RADIO_MGMT_VERSION, mgmt->transaction,
+            KBD_RADIO_FRAME_MGMT_REQUEST, mgmt->fragment };
+        s_mgmt_ack_pending = true;
     }
 }
 
