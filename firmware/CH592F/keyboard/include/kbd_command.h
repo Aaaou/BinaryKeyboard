@@ -51,6 +51,14 @@ void KBD_Command_Init(void);
 void KBD_Command_SetResponseSender(kbd_command_response_sender_t sender);
 
 /**
+ * @brief 获取当前命令响应发送通道
+ *
+ * 延迟执行的命令可在入队时保存该通道，避免任务完成时响应被错误地
+ * 发送到默认 USB 配置端点。
+ */
+kbd_command_response_sender_t KBD_Command_GetResponseSender(void);
+
+/**
  * @brief 处理 HID 配置命令
  *
  * @param[in] frame 命令帧指针
@@ -68,6 +76,15 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame);
  * @param[in] len  响应数据长度
  */
 void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data, uint8_t len);
+
+/**
+ * @brief 通过指定通道发送命令响应
+ *
+ * sender 为 NULL 时使用默认 USB HID 配置端点。
+ */
+void KBD_Command_SendResponseTo(kbd_command_response_sender_t sender,
+                                uint8_t cmd, uint8_t sub,
+                                const uint8_t *data, uint8_t len);
 
 /** @} */ /* end of KBD_CMD_API */
 

@@ -88,6 +88,11 @@ void KBD_Command_SetResponseSender(kbd_command_response_sender_t sender)
   s_response_sender = sender;
 }
 
+kbd_command_response_sender_t KBD_Command_GetResponseSender(void)
+{
+  return s_response_sender;
+}
+
 int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 {
   switch (frame->cmd)
@@ -228,6 +233,13 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
 void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data,
                               uint8_t len)
 {
+  KBD_Command_SendResponseTo(s_response_sender, cmd, sub, data, len);
+}
+
+void KBD_Command_SendResponseTo(kbd_command_response_sender_t sender,
+                                uint8_t cmd, uint8_t sub,
+                                const uint8_t *data, uint8_t len)
+{
   uint8_t frame[64];
   uint8_t copy_len = 0;
   memset(frame, 0, sizeof(frame));
@@ -240,13 +252,13 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data,
     memcpy(&frame[3], data, copy_len);
   }
 
-  if (s_response_sender)
+  if (sender)
   {
     /* The RF management tunnel must see the actual command length. Sending
      * the padded 64-byte HID buffer would create phantom fragments and make
      * the receiver wait for data that does not exist. USB still receives the
      * fixed-size report through USB_Config_SendResponse below. */
-    s_response_sender(frame, (uint8_t)(copy_len + 3u));
+    sender(frame, (uint8_t)(copy_len + 3u));
     return;
   }
 
@@ -702,6 +714,21 @@ static void HandleMacroSet(const kbd_cmd_frame_t *frame)
   if (frame->sub == 0)
   {
     uint8_t page = frame->data[0];
+#if KBD_RADIO_2G4_ENABLED
+    /* RF management commands are dispatched from KBD_Radio2G4_Process(),
+     * already outside interrupt context. Complete the Flash operation while
+     * its transaction-specific sender is installed so the receiver gets an
+     * unambiguous final-fragment response. USB commands still use the
+     * deferred path below because they originate in the USB callback. */
+    if (KBD_Command_GetResponseSender() != NULL)
+    {
+      int ret = (page == 0xFFu) ? Kbd_Macro_EraseAll()
+                                : Kbd_Macro_ErasePage(page);
+      resp[0] = (ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
+      KBD_Command_SendResponse(KBD_CMD_MACRO_SET, frame->sub, resp, 1);
+      return;
+    }
+#endif
     /* 延迟到 TMOS 主循环执行 Flash 擦除，完成后自动发送响应 */
     if (Kbd_Macro_EraseDeferred(page, frame->sub) != 0)
     {
@@ -720,6 +747,15 @@ static void HandleMacroSet(const kbd_cmd_frame_t *frame)
       len = (uint8_t)(frame->len - 3);
     }
 
+#if KBD_RADIO_2G4_ENABLED
+    if (KBD_Command_GetResponseSender() != NULL)
+    {
+      int ret = Kbd_Macro_WriteRaw(offset, &frame->data[3], len);
+      resp[0] = (ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
+      KBD_Command_SendResponse(KBD_CMD_MACRO_SET, frame->sub, resp, 1);
+      return;
+    }
+#endif
     /* 延迟到 TMOS 主循环执行 Flash 写入，完成后自动发送响应 */
     if (Kbd_Macro_WriteRawDeferred(offset, &frame->data[3], len,
                                    frame->sub) != 0)

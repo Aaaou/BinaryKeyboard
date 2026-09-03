@@ -4,6 +4,7 @@
 #if KBD_RADIO_2G4_ENABLED
 #include "kbd_radio_protocol.h"
 #include "kbd_command.h"
+#include "kbd_storage.h"
 #include "kbd_types.h"
 #include "CH59x_common.h"
 #include "RF.h"
@@ -94,6 +95,9 @@ static struct {
     uint8_t data[61];
 } s_mgmt_rx;
 static bool s_mgmt_command_pending;
+static bool s_mgmt_deferred_pending;
+static bool s_mgmt_response_expected;
+static uint8_t s_mgmt_response_transaction;
 static uint32_t s_mgmt_started;
 static bool s_mgmt_last_request_valid;
 static uint8_t s_mgmt_last_transaction;
@@ -122,6 +126,9 @@ static void mgmt_reset_session(void)
     memset(&s_mgmt_rx, 0, sizeof(s_mgmt_rx));
     memset(&s_mgmt_tx, 0, sizeof(s_mgmt_tx));
     s_mgmt_command_pending = false;
+    s_mgmt_deferred_pending = false;
+    s_mgmt_response_expected = false;
+    s_mgmt_response_transaction = 0u;
     s_mgmt_ack_pending = false;
     memset(&s_mgmt_ack, 0, sizeof(s_mgmt_ack));
     s_mgmt_started = 0u;
@@ -140,6 +147,10 @@ static void mgmt_send_response(const uint8_t *frame, uint8_t len)
         KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_DROP, 0, 1);
         return;
     }
+    if (!s_mgmt_response_expected) {
+        KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_DROP, frame[0], 9u);
+        return;
+    }
     if (s_mgmt_tx.active) {
         KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_DROP, frame[0], 2);
         return;
@@ -148,13 +159,15 @@ static void mgmt_send_response(const uint8_t *frame, uint8_t len)
     memcpy(s_mgmt_last_response, frame, len);
     s_mgmt_last_response_len = len;
     s_mgmt_tx.length = len;
-    s_mgmt_tx.transaction = s_mgmt_rx.transaction;
+    s_mgmt_tx.transaction = s_mgmt_response_transaction;
     s_mgmt_tx.fragment = 0u;
     s_mgmt_tx.fragments = (uint8_t)((len + KBD_RADIO_MGMT_MAX_DATA - 1u) / KBD_RADIO_MGMT_MAX_DATA);
     if (!s_mgmt_tx.fragments) s_mgmt_tx.fragments = 1u;
     s_mgmt_tx.repeat = 0u;
     s_mgmt_tx.last_send = 0u;
     s_mgmt_tx.active = true;
+    s_mgmt_response_expected = false;
+    s_mgmt_deferred_pending = false;
     KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_TX, frame[0], 0);
 }
 
@@ -209,8 +222,19 @@ static void mgmt_process_frame(const kbd_radio_frame_t *radio)
         /* The receiver deliberately repeats request fragments. If the first
          * response was lost, replay the cached response instead of executing
          * a write command twice or silently waiting for the receiver timeout. */
-        if (mgmt->fragment == 0u && !s_mgmt_tx.active && s_mgmt_last_response_len != 0u)
+        if (mgmt->fragment == 0u && !s_mgmt_tx.active && s_mgmt_last_response_len != 0u) {
+            s_mgmt_response_transaction = mgmt->transaction;
+            s_mgmt_response_expected = true;
             mgmt_send_response(s_mgmt_last_response, s_mgmt_last_response_len);
+        }
+        return;
+    }
+    /* After an RF session reset the storage task can still be finishing an
+     * operation owned by the old session. Keep new transactions out until
+     * that callback has been discarded, otherwise it could answer with the
+     * new session's transaction number. */
+    if (s_mgmt_deferred_pending || Kbd_Macro_IsBusy()) {
+        KBD_Log_RadioMgmtEvent(KBD_LOG_SYS_RF_MGMT_DROP, mgmt->command, 10u);
         return;
     }
     if (mgmt->fragment == 0u) {
@@ -263,6 +287,13 @@ static void mgmt_process_frame(const kbd_radio_frame_t *radio)
         }
         command.cmd = s_mgmt_rx.data[0]; command.sub = s_mgmt_rx.data[1]; command.len = s_mgmt_rx.data[2];
         memcpy(command.data, &s_mgmt_rx.data[3], command.len);
+        /* The response cache belongs to the previous completed transaction.
+         * Invalidate it before publishing the new transaction as the latest
+         * request. Otherwise a repeated final request fragment can replay an
+         * unrelated response while an asynchronous Flash operation is still
+         * pending, and the receiver correctly rejects the command mismatch. */
+        s_mgmt_last_response_len = 0u;
+        memset(s_mgmt_last_response, 0, sizeof(s_mgmt_last_response));
         s_mgmt_last_request_valid = true;
         s_mgmt_last_transaction = s_mgmt_rx.transaction;
         s_mgmt_last_command = s_mgmt_rx.command;
@@ -288,18 +319,32 @@ static void mgmt_process_pending_command(void)
     command.len = s_mgmt_rx.data[2];
     memcpy(command.data, &s_mgmt_rx.data[3], command.len);
     s_mgmt_command_pending = false;
+    s_mgmt_response_transaction = s_mgmt_rx.transaction;
+    s_mgmt_response_expected = true;
     KBD_Command_SetResponseSender(mgmt_send_response);
     KBD_Command_Process(&command);
     KBD_Command_SetResponseSender(NULL);
+    if (s_mgmt_response_expected) {
+        if (Kbd_Macro_IsBusy()) {
+            s_mgmt_deferred_pending = true;
+        } else {
+            /* Every synchronous command must respond while the override is
+             * installed. Do not leave an orphaned transaction blocking RF. */
+            s_mgmt_response_expected = false;
+        }
+    }
 }
 
 static void mgmt_expire(void)
 {
-    if (!s_mgmt_rx.active && !s_mgmt_command_pending && !s_mgmt_tx.active) return;
+    if (!s_mgmt_rx.active && !s_mgmt_command_pending &&
+        !s_mgmt_deferred_pending && !s_mgmt_tx.active) return;
     if (rf_rtc_elapsed(RTC_GetCycle32k(), s_mgmt_started) < KBD_MGMT_TIMEOUT_TICKS) return;
     memset(&s_mgmt_rx, 0, sizeof(s_mgmt_rx));
     memset(&s_mgmt_tx, 0, sizeof(s_mgmt_tx));
     s_mgmt_command_pending = false;
+    s_mgmt_deferred_pending = false;
+    s_mgmt_response_expected = false;
     s_mgmt_last_request_valid = false;
     s_mgmt_last_response_len = 0u;
     memset(s_mgmt_last_response, 0, sizeof(s_mgmt_last_response));
@@ -401,9 +446,14 @@ static int rf_nv_save(void)
 static void rf_bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
-        s_mgmt_session_reset_pending = true;
         bool binding_changed = s_device_id != status->devId ||
                                memcmp(s_peer_id, status->PeerInfo, sizeof(s_peer_id)) != 0;
+        /* RFBound also reports SUCCESS after recovering the same persisted
+         * peer. Preserve an in-flight management transaction in that case;
+         * its own timeout and transaction number remain authoritative. A
+         * manual pairing or a changed peer starts a genuinely new session. */
+        if (s_manual_pairing || binding_changed)
+            s_mgmt_session_reset_pending = true;
         s_device_id = status->devId;
         memcpy(s_peer_id, status->PeerInfo, sizeof(s_peer_id));
         /* WCH's reference device persists only a changed device ID or peer.
@@ -425,7 +475,10 @@ static void rf_bound_cb(staBound_t *status)
          * peer exists but the RF session is not ready yet. */
         s_state = KBD_RADIO_PAIR_CONNECTED;
     } else if (status->status == bleTimeout) {
-        s_mgmt_session_reset_pending = true;
+        /* bleTimeout is RFBound's internal recovery transition. Flash erase
+         * can legitimately make the application silent for about 100 ms;
+         * keep management state until recovery or its independent 3 s
+         * timeout instead of turning that pause into ERR_INVALID. */
         /* WCH documents bleTimeout as an internal reconnect/bindable
          * transition. Only an explicit pairing session owns the pairing
          * window; an already-bound keyboard remains bound here. */
@@ -782,6 +835,7 @@ void KBD_Radio2G4_Process(void)
     /* Capability traffic is periodic and expendable. It must not occupy the
      * descriptor needed by an ACK or a command response. */
     if (!s_mgmt_ack_pending && !s_mgmt_rx.active && !s_mgmt_command_pending &&
+        !s_mgmt_deferred_pending &&
         !s_mgmt_tx.active && s_rf_ready &&
         (s_last_capability == 0u ||
          rf_rtc_elapsed(RTC_GetCycle32k(), s_last_capability) >= KBD_RF_CAPABILITY_PERIOD_TICKS)) {

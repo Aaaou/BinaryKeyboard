@@ -23,6 +23,8 @@
 /*============================================================================*/
 
 #define MACRO_STEP_EVT 0x0001
+#define MACRO_2G4_REPORT_GAP_MS 4u
+#define MACRO_REPORT_RETRY_MS 4u
 
 /*============================================================================*/
 /* 状态定义                                                                    */
@@ -66,8 +68,10 @@ static void MacroStepActions(void);
 static bool ShouldLoop(void);
 static void MacroAddKey(uint8_t keycode);
 static void MacroRemoveKey(uint8_t keycode);
-static void MacroSendKeyboardReport(void);
+static int MacroSendKeyboardReport(void);
 static void MacroReleaseAll(void);
+static void MacroScheduleStep(uint16_t delay_ms);
+static bool MacroPace2G4Report(void);
 
 /*============================================================================*/
 /* 公共函数                                                                    */
@@ -177,8 +181,12 @@ static void MacroStepActions(void)
         return;
 
     if (s_consumer_release_pending) {
-        KBD_Mode_SendConsumerReport(0);
+        if (KBD_Mode_SendConsumerReport(0) != 0) {
+            MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+            return;
+        }
         s_consumer_release_pending = false;
+        if (MacroPace2G4Report()) return;
     }
 
     while (s_action_idx < s_header.action_count) {
@@ -197,47 +205,79 @@ static void MacroStepActions(void)
         switch (action.type) {
         case KBD_MACRO_KEY_DOWN:
             MacroAddKey(action.param);
-            MacroSendKeyboardReport();
+            if (MacroSendKeyboardReport() != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_KEY_UP:
             MacroRemoveKey(action.param);
-            MacroSendKeyboardReport();
+            if (MacroSendKeyboardReport() != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_MOD_DOWN:
             s_mod_mask |= action.param;
-            MacroSendKeyboardReport();
+            if (MacroSendKeyboardReport() != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_MOD_UP:
             s_mod_mask &= ~action.param;
-            MacroSendKeyboardReport();
+            if (MacroSendKeyboardReport() != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_DELAY: {
             uint32_t delay_ms = (uint32_t)action.param * 10;
             if (delay_ms == 0) delay_ms = 10;
-            tmos_start_task(s_task_id, MACRO_STEP_EVT,
-                            MS1_TO_SYSTEM_TIME(delay_ms));
+            MacroScheduleStep((uint16_t)delay_ms);
             return; /* 等待定时器回调继续 */
         }
 
         case KBD_MACRO_CONSUMER:
-            KBD_Mode_SendConsumerReport((uint16_t)action.param);
+            if (KBD_Mode_SendConsumerReport((uint16_t)action.param) != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
             s_consumer_release_pending = true;
-            tmos_start_task(s_task_id, MACRO_STEP_EVT,
-                            MS1_TO_SYSTEM_TIME(20));
+            MacroScheduleStep(20u);
             return;
 
         case KBD_MACRO_MOUSE_DOWN:
             s_mouse_buttons |= action.param;
-            KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, 0);
+            if (KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, 0) != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_MOUSE_UP:
             s_mouse_buttons &= (uint8_t)~action.param;
-            KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, 0);
+            if (KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, 0) != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
 
         case KBD_MACRO_WHEEL: {
@@ -246,7 +286,12 @@ static void MacroStepActions(void)
                 wheel = 1;
             else if (action.param == KBD_WHEEL_DOWN)
                 wheel = -1;
-            KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, wheel);
+            if (KBD_Mode_SendMouseReport(s_mouse_buttons, 0, 0, wheel) != 0) {
+                s_action_idx--;
+                MacroScheduleStep(MACRO_REPORT_RETRY_MS);
+                return;
+            }
+            if (MacroPace2G4Report()) return;
             break;
         }
 
@@ -320,9 +365,22 @@ static void MacroRemoveKey(uint8_t keycode)
     }
 }
 
-static void MacroSendKeyboardReport(void)
+static int MacroSendKeyboardReport(void)
 {
-    KBD_Mode_SendKeyboardReport(s_mod_mask, s_keys, s_key_count);
+    return KBD_Mode_SendKeyboardReport(s_mod_mask, s_keys, s_key_count);
+}
+
+static void MacroScheduleStep(uint16_t delay_ms)
+{
+    tmos_start_task(s_task_id, MACRO_STEP_EVT,
+                    MS1_TO_SYSTEM_TIME(delay_ms));
+}
+
+static bool MacroPace2G4Report(void)
+{
+    if (KBD_Mode_Get() != KBD_WORK_MODE_2G4) return false;
+    MacroScheduleStep(MACRO_2G4_REPORT_GAP_MS);
+    return true;
 }
 
 static void MacroReleaseAll(void)

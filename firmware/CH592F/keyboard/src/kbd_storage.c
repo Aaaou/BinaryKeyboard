@@ -128,6 +128,7 @@ static uint8_t s_runtime_last_saved_mode = 0xFF;
 static struct {
   uint8_t  type;       /**< MACRO_OP_* 操作类型 */
   uint8_t  sub;        /**< 子命令编号（用于回复） */
+  kbd_command_response_sender_t response_sender; /**< 入队时的响应通道 */
   uint16_t offset;     /**< 写入偏移 */
   uint16_t len;        /**< 写入长度 */
   uint8_t  erase_page; /**< 擦除页索引 */
@@ -535,10 +536,14 @@ static uint16_t KBD_Storage_ProcessEvent(uint8_t task_id, uint16_t events) {
       }
 
       uint8_t sub = s_macro_pending.sub;
+      kbd_command_response_sender_t response_sender =
+          s_macro_pending.response_sender;
       s_macro_pending.type = MACRO_OP_IDLE; /* 先清标志，再发响应 */
+      s_macro_pending.response_sender = NULL;
 
       uint8_t resp = (ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
-      KBD_Command_SendResponse(KBD_CMD_MACRO_SET, sub, &resp, 1);
+      KBD_Command_SendResponseTo(response_sender, KBD_CMD_MACRO_SET, sub,
+                                 &resp, 1);
 
       if (ret != 0) {
         LOG_W(TAG, "Deferred macro op failed: %d", ret);
@@ -1113,6 +1118,7 @@ int Kbd_Macro_WriteRawDeferred(uint16_t offset, const uint8_t *buf,
   }
 
   s_macro_pending.sub = sub;
+  s_macro_pending.response_sender = KBD_Command_GetResponseSender();
   s_macro_pending.offset = offset;
   s_macro_pending.len = len;
   memcpy(s_macro_pending.data, buf, len);
@@ -1123,9 +1129,13 @@ int Kbd_Macro_WriteRawDeferred(uint16_t offset, const uint8_t *buf,
   } else {
     /* 兜底：TMOS 未就绪时同步执行 */
     int ret = MeowFs_WriteRawInternal(offset, s_macro_pending.data, len);
+    kbd_command_response_sender_t response_sender =
+        s_macro_pending.response_sender;
     s_macro_pending.type = MACRO_OP_IDLE;
+    s_macro_pending.response_sender = NULL;
     uint8_t resp = (ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
-    KBD_Command_SendResponse(KBD_CMD_MACRO_SET, sub, &resp, 1);
+    KBD_Command_SendResponseTo(response_sender, KBD_CMD_MACRO_SET, sub,
+                               &resp, 1);
   }
   return 0;
 }
@@ -1136,6 +1146,7 @@ int Kbd_Macro_EraseDeferred(uint8_t page, uint8_t sub) {
   }
 
   s_macro_pending.sub = sub;
+  s_macro_pending.response_sender = KBD_Command_GetResponseSender();
   s_macro_pending.erase_page = page;
   s_macro_pending.type = (page == 0xFF) ? MACRO_OP_ERASE_ALL
                                         : MACRO_OP_ERASE_PAGE;
@@ -1145,9 +1156,13 @@ int Kbd_Macro_EraseDeferred(uint8_t page, uint8_t sub) {
   } else {
     int ret = (page == 0xFF) ? Kbd_Macro_EraseAll()
                              : Kbd_Macro_ErasePage(page);
+    kbd_command_response_sender_t response_sender =
+        s_macro_pending.response_sender;
     s_macro_pending.type = MACRO_OP_IDLE;
+    s_macro_pending.response_sender = NULL;
     uint8_t resp = (ret == 0) ? KBD_RESP_OK : KBD_RESP_ERR_FLASH;
-    KBD_Command_SendResponse(KBD_CMD_MACRO_SET, sub, &resp, 1);
+    KBD_Command_SendResponseTo(response_sender, KBD_CMD_MACRO_SET, sub,
+                               &resp, 1);
   }
   return 0;
 }

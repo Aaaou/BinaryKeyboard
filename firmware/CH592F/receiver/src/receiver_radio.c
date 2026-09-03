@@ -337,10 +337,15 @@ static void apply_filter(receiver_filter_mode_t mode)
 static void bound_cb(staBound_t *status)
 {
     if (status->status == SUCCESS) {
-        /* SUCCESS starts a new RFBound session, even when it reconnects the
-         * same persisted peer. Management fragments and callbacks belong to
-         * the old session and must never survive into the new one. */
-        s_management_session_reset_pending = true;
+        bool binding_changed = s_nv.device_id != status->devId ||
+                               memcmp(s_nv.peer, status->PeerInfo,
+                                      sizeof(s_nv.peer)) != 0;
+        /* Automatic recovery of the same persisted peer is continuous at
+         * the application protocol layer. Preserve a bounded management
+         * transaction across it; manual pairing or a different peer still
+         * invalidates all old fragments and callbacks. */
+        if (s_state == KBD_RADIO_PAIRING || binding_changed)
+            s_management_session_reset_pending = true;
         s_rf_disconnect_pending = false;
         s_rx_quarantine = false;
         s_release_repeat_active = false;
@@ -356,7 +361,9 @@ static void bound_cb(staBound_t *status)
             s_pair_success_logged = true;
         }
     } else if (status->status == bleTimeout) {
-        s_management_session_reset_pending = true;
+        /* RFBound owns this transient recovery state. The management tunnel
+         * has an independent 3 s timeout, so a roughly 100 ms keyboard Flash
+         * erase must not be reported to Studio as an invalid response. */
         s_has_sequence = false;
         /* A late RFBound callback may arrive after the visible state has
          * already fallen back to BOUND. A valid application frame proves that
