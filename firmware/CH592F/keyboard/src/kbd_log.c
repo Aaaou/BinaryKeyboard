@@ -253,3 +253,13 @@ void KBD_Log_RadioMgmtEvent(uint8_t event, uint8_t command, uint8_t result)
     (void)event; (void)command; (void)result;
 #endif
 }
+
+void KBD_Log_MacroEvent(uint8_t event, uint8_t item, uint8_t value)
+{
+#if KBD_USB_LOG_ENABLE
+    uint8_t data[3] = {event, item, value};
+    if (usb_log_record_allowed()) queue_push(KBD_LOG_SYSTEM_EVENT, data, 3);
+#else
+    (void)event; (void)item; (void)value;
+#endif
+}

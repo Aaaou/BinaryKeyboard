@@ -512,8 +512,12 @@ int KBD_Mode_SendKeyboardReport(uint8_t modifier, uint8_t *keys, uint8_t key_cou
 
     if (g_current_mode == KBD_WORK_MODE_USB)
     {
-        USB_Keyboard_Press(report_modifier, keys, key_count);
-        return 0;
+        /* Report the real endpoint result to the caller. The old void helper
+         * silently dropped a release when EP1 stayed busy, while the macro
+         * engine incorrectly advanced as if the zero report had been sent. */
+        return USB_Keyboard_TrySend(
+                   (const USB_KeyboardReport_t *)g_kbd_report)
+                   ? 0 : -1;
     }
     else if (g_current_mode == KBD_WORK_MODE_BLE)
     {
@@ -543,8 +547,8 @@ int KBD_Mode_ReleaseAllKeys(void)
 {
     if (g_current_mode == KBD_WORK_MODE_USB)
     {
-        USB_Keyboard_Release();
-        return 0;
+        USB_KeyboardReport_t report = {0};
+        return USB_Keyboard_TrySend(&report) ? 0 : -1;
     }
     else if (g_current_mode == KBD_WORK_MODE_BLE)
     {

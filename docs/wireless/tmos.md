@@ -1,5 +1,9 @@
 # TMOS 使用说明（CH592F）
 
+> 注意：独立 2.4G RF-only 镜像由 RFBound 使用 Timer3/TMOS 调度链。该镜像的宏延时和
+> RGB 周期任务必须使用独立的 TMR0 1 ms tick，并在主循环执行实际工作；USB/BLE 镜像
+> 才使用本文后续的 TMOS 任务模式。不要把 RF-only 的延时动作重新注册到 TMOS。
+
 基于 WCH BLE 库的 `TMOS`（任务/事件调度）在本项目中的用法说明，重点覆盖：
 
 - `task + event` 事件模型

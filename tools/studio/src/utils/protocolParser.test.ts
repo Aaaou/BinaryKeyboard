@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Command, ResponseCode } from '@/types/protocol';
-import { parseReceiveFrame } from './protocolParser';
+import { parseLogFrame, parseReceiveFrame } from './protocolParser';
 
 function batteryFrame(data: number[]): Uint8Array {
   const frame = new Uint8Array(64);
@@ -55,6 +55,46 @@ describe('BATTERY response parsing', () => {
     expect(parsed).toContain('2.4G 键盘 已连接');
     expect(parsed).toContain('ADC原始值 4095');
     expect(parsed).not.toContain('启动阶段');
+  });
+});
+
+describe('macro and receiver HID diagnostic logs', () => {
+  it('describes a keyboard macro action with its type and parameter', () => {
+    const parsed = parseLogFrame(
+      new Uint8Array([Command.LOG, 0x07, 0x03, 0x21, 0x02, 0x22]),
+    ).parsed;
+
+    expect(parsed).toContain('宏 HID 动作已提交');
+    expect(parsed).toContain('动作 0x02');
+    expect(parsed).toContain('参数 0x22');
+  });
+
+  it('identifies an RF all-zero release submitted directly to USB', () => {
+    const parsed = parseLogFrame(
+      new Uint8Array([Command.LOG, 0x07, 0x03, 0x9f, 0x34, 0x00]),
+    ).parsed;
+
+    expect(parsed).toContain('RF 键盘报告已直接提交 USB');
+    expect(parsed).toContain('RF序号低8位 52');
+    expect(parsed).toContain('全零释放');
+  });
+
+  it('describes a macro action waiting for RF retry', () => {
+    const parsed = parseLogFrame(
+      new Uint8Array([Command.LOG, 0x07, 0x03, 0x24, 0x02, 0x22]),
+    ).parsed;
+
+    expect(parsed).toContain('宏 HID 动作等待重试');
+    expect(parsed).toContain('动作 0x02');
+    expect(parsed).toContain('参数 0x22');
+  });
+
+  it('identifies receiver keyboard lease expiry', () => {
+    const parsed = parseLogFrame(
+      new Uint8Array([Command.LOG, 0x07, 0x03, 0xa2, 0x03, 0x00]),
+    ).parsed;
+
+    expect(parsed).toContain('RF 按键状态租约过期，强制释放');
   });
 });
 

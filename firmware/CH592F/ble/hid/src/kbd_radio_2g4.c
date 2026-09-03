@@ -26,21 +26,13 @@
 #define KBD_MGMT_TIMEOUT_TICKS (3u * 32768u)
 #define KBD_MGMT_TX_GAP_TICKS ((4u * 32768u) / 1000u)
 #define KBD_MGMT_TX_REPEATS 3u
+#define KBD_HID_HELD_REFRESH_TICKS ((50u * 32768u) / 1000u)
 
-/*
- * RELEASE LIMITATION (intentional and documented):
- *
- * We tried three application-side ways to stop a held key after a receiver
- * disappears: periodic KEEPALIVE frames, a short application watchdog, and a
- * timer-driven RF role restart after bleTimeout.  They were removed because
- * they filled the WCH RFBound TX ring or interrupted RFBound's own recovery.
- * The WCH reference device has the same boundary: bleTimeout is an internal
- * recovery state and only FAILURE restarts the bound role.  Therefore this
- * firmware cannot guarantee a sub-second stop when the keyboard loses power
- * before sending a release report.  A host may continue repeating the last
- * HID state for about five seconds until RFBound reports a terminal failure
- * and the receiver's HID release path runs.  Do not describe this as fixed.
- */
+/* A non-zero keyboard snapshot is refreshed at a bounded 20 Hz. The receiver
+ * treats it as a lease and releases USB HID if the lease expires. Unlike the
+ * old all-state keepalive experiment, zero/idle reports are never repeated,
+ * management traffic has priority, and a busy descriptor is not retried from
+ * every main-loop turn. */
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -74,6 +66,9 @@ static volatile uint32_t s_tx_busy;
 static volatile uint32_t s_tx_finished;
 static uint32_t s_last_tx;
 static uint32_t s_last_capability;
+static uint8_t s_keyboard_snapshot[8];
+static bool s_keyboard_snapshot_held;
+static uint32_t s_last_keyboard_tx;
 /* RFBound callbacks run in RF context. Defer role restart work to the
  * keyboard main loop and expose only stable states to the RGB scheduler. */
 static volatile uint8_t s_indicator_event;
@@ -613,6 +608,9 @@ int KBD_Radio2G4_Init(void)
     rf_nv_load();
     s_rf_rx_pending = false;
     s_last_capability = 0u;
+    memset(s_keyboard_snapshot, 0, sizeof(s_keyboard_snapshot));
+    s_keyboard_snapshot_held = false;
+    s_last_keyboard_tx = 0u;
     WS2812_Init();
     WS2812_SetIndicatorBrightness(48);
     RF_LibInit(rf_irq_cb);
@@ -636,6 +634,9 @@ void KBD_Radio2G4_Stop(void)
     s_disconnect_pending = false;
     s_rf_rx_pending = false;
     s_last_capability = 0u;
+    memset(s_keyboard_snapshot, 0, sizeof(s_keyboard_snapshot));
+    s_keyboard_snapshot_held = false;
+    s_last_keyboard_tx = 0u;
     s_indicator_event = 0u;
     s_failure_indicated = false;
     s_failure_flash_active = false;
@@ -743,13 +744,19 @@ uint8_t KBD_Radio2G4_GetTxDescriptorsBusy(void)
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count)
 {
     uint8_t report[8] = { modifier, 0, 0, 0, 0, 0, 0, 0 };
-    if (s_state != KBD_RADIO_PAIR_CONNECTED) return -1;
     if (count > 6) count = 6;
     if (keys && count) memcpy(&report[2], keys, count);
+    memcpy(s_keyboard_snapshot, report, sizeof(report));
+    s_keyboard_snapshot_held = modifier != 0u || count != 0u;
+    if (s_state != KBD_RADIO_PAIR_CONNECTED) return -1;
     kbd_radio_frame_t frame;
     uint16_t len = KBD_RadioProtocol_Encode(&frame, KBD_RADIO_FRAME_KEYBOARD,
                                             s_session, ++s_sequence, report, sizeof(report));
-    return len && len <= 64u ? rf_send((const uint8_t *)&frame, (uint8_t)len) : -1;
+    int result = len && len <= 64u
+                     ? rf_send((const uint8_t *)&frame, (uint8_t)len)
+                     : -1;
+    if (result == 0) s_last_keyboard_tx = RTC_GetCycle32k();
+    return result;
 }
 static int rf_send_frame(uint8_t type, const uint8_t *payload, uint8_t payload_len)
 {
@@ -840,6 +847,26 @@ void KBD_Radio2G4_Process(void)
         (s_last_capability == 0u ||
          rf_rtc_elapsed(RTC_GetCycle32k(), s_last_capability) >= KBD_RF_CAPABILITY_PERIOD_TICKS)) {
         send_capability_announcement();
+    }
+    /* Refresh only an actively held keyboard state. This gives the receiver
+     * enough evidence to distinguish a real hold from a lost release without
+     * generating continuous traffic while the keyboard is idle. */
+    if (s_keyboard_snapshot_held && s_rf_ready &&
+        !s_mgmt_ack_pending && !s_mgmt_rx.active && !s_mgmt_command_pending &&
+        !s_mgmt_deferred_pending && !s_mgmt_tx.active &&
+        (s_last_keyboard_tx == 0u ||
+         rf_rtc_elapsed(RTC_GetCycle32k(), s_last_keyboard_tx) >=
+             KBD_HID_HELD_REFRESH_TICKS)) {
+        kbd_radio_frame_t frame;
+        uint16_t len = KBD_RadioProtocol_Encode(
+            &frame, KBD_RADIO_FRAME_KEYBOARD, s_session, ++s_sequence,
+            s_keyboard_snapshot, sizeof(s_keyboard_snapshot));
+        /* Record the attempt time even when the descriptor is busy. This
+         * keeps bounded refresh traffic from degenerating into a tight loop. */
+        s_last_keyboard_tx = RTC_GetCycle32k();
+        (void)(len && len <= 64u
+                   ? rf_send((const uint8_t *)&frame, (uint8_t)len)
+                   : -1);
     }
     /* Do not write WS2812 here.  The RGB scheduler owns the strip and maps
      * the radio state to the dedicated indicator LED, preventing two

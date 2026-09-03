@@ -533,7 +533,12 @@ extern "C"
     KBD_LOG_SYS_RF_MGMT_EXEC = 0x11,
     KBD_LOG_SYS_RF_MGMT_TX = 0x12,
     KBD_LOG_SYS_RF_MGMT_DROP = 0x13,
-  } kbd_log_sys_event_t;
+    KBD_LOG_SYS_MACRO_START = 0x20,
+    KBD_LOG_SYS_MACRO_ACTION = 0x21,
+    KBD_LOG_SYS_MACRO_RELEASE = 0x22,
+    KBD_LOG_SYS_MACRO_DONE = 0x23,
+    KBD_LOG_SYS_MACRO_RETRY = 0x24,
+} kbd_log_sys_event_t;
 
   /**
    * @brief HID 响应码

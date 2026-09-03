@@ -37,6 +37,10 @@
 #define RX_LOG_MGMT_SEND_BUSY       0x9Cu
 #define RX_LOG_MGMT_RX_CRC_ERROR    0x9Du
 #define RX_LOG_MGMT_RX_FRAGMENT_ERR 0x9Eu
+#define RX_LOG_HID_KEYBOARD_DIRECT  0x9Fu
+#define RX_LOG_HID_KEYBOARD_QUEUED  0xA0u
+#define RX_LOG_HID_KEYBOARD_FLUSHED 0xA1u
+#define RX_LOG_HID_LEASE_EXPIRED     0xA2u
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);

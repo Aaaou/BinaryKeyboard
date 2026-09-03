@@ -106,6 +106,9 @@ void KBD_Log_SystemEvent(uint8_t event);
 /** 记录 2.4G 管理透传事件: data=[event, command, result]. */
 void KBD_Log_RadioMgmtEvent(uint8_t event, uint8_t command, uint8_t result);
 
+/** Record a macro replay diagnostic: data=[event, action/slot, value]. */
+void KBD_Log_MacroEvent(uint8_t event, uint8_t item, uint8_t value);
+
 #ifdef __cplusplus
 }
 #endif

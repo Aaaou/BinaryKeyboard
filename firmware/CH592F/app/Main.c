@@ -53,6 +53,7 @@ __attribute__((noinline)) void Main_Circulation(void)
         KBD_RGB_Poll();
 #endif
         KBD_Core_Process();
+        KBD_Macro_Poll();
         KBD_Log_Flush();
     }
 }

@@ -209,6 +209,11 @@ export enum SystemLogEvent {
   RF_MGMT_EXEC = 0x11,
   RF_MGMT_TX = 0x12,
   RF_MGMT_DROP = 0x13,
+  MACRO_START = 0x20,
+  MACRO_ACTION = 0x21,
+  MACRO_RELEASE = 0x22,
+  MACRO_DONE = 0x23,
+  MACRO_RETRY = 0x24,
 }
 
 // ============================================================================

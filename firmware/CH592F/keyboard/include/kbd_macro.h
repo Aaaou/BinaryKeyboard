@@ -19,6 +19,12 @@ extern "C" {
  */
 void KBD_Macro_Init(void);
 
+/** 2.4G 主循环宏调度；USB/BLE 构建中为空操作。 */
+void KBD_Macro_Poll(void);
+
+/** 2.4G 独立 1ms 时基；仅做倒计时，可从定时器中断调用。 */
+void KBD_Macro_TimerTick1ms(void);
+
 /**
  * @brief 启动宏回放
  * @param slot    宏槽位 (0~7)

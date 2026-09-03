@@ -20,29 +20,16 @@
  * 1 ms timer so RF/TMOS work cannot delay stuck-key protection. */
 #define RX_RF_DISCONNECT_GRACE_TICKS ((32768u * 400u) / 1000u)
 #define RX_RELEASE_REPEAT_TICKS ((32768u * 200u) / 1000u)
+#define RX_KEYBOARD_LEASE_TICKS ((32768u * 220u) / 1000u)
 #define RX_RELEASE_KEYBOARD 0x01u
 #define RX_RELEASE_MOUSE    0x02u
 #define RX_RELEASE_CONSUMER 0x04u
 #define RX_RELEASE_ALL      0x07u
 
-/*
- * RELEASE LIMITATION (intentional and documented):
- *
- * We previously tried an application HID/KEEPALIVE watchdog, an immediate
- * zero-report on every timeout, and an aggressive RFRole_Shut/RF_LibInit
- * reconnect loop.  Those approaches either caused false disconnects during
- * normal RFBound recovery, saturated the TX descriptors, or prevented the
- * keyboard from reconnecting.  They are not part of this release.
- *
- * The WCH reference dongle also treats bleTimeout as a library-owned recovery
- * state and only restarts the Host after FAILURE.  Consequently a keyboard
- * that loses power without sending a release report can keep the last HID
- * state visible to the USB host for roughly five seconds, depending on the
- * RFBound timeout and USB scheduling.  This is a known lower-layer limit, not
- * a solved feature.  The receiver sends all-zero reports after its confirmed
- * disconnect path, but it cannot make that path occur before RFBound signals
- * the disconnect.  Do not claim sub-second release in product material.
- */
+/* Keyboard non-zero snapshots carry a short application lease. The keyboard
+ * refreshes only while a key is held, and this receiver releases USB HID when
+ * that lease expires. This is independent of RFBound's slower link timeout
+ * and leaves its reconnect state machine untouched. */
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -141,6 +128,8 @@ static volatile uint32_t s_last_link_timeout;
 static volatile uint32_t s_last_release_queued;
 static volatile uint32_t s_last_release_sent;
 static volatile uint16_t s_release_busy_count;
+static bool s_keyboard_lease_active;
+static uint32_t s_keyboard_lease_refreshed;
 static uint16_t s_valid_frame_count;
 static uint16_t s_keyboard_rx_count;
 static uint16_t s_keyboard_usb_sent_count;
@@ -632,14 +621,27 @@ static void process_rf_rx(void)
                         if (++s_mgmt_tx.fragment >= s_mgmt_tx.fragments) s_mgmt_tx.active = false;
                     }
                 } else if (frame->header.type == KBD_RADIO_FRAME_KEYBOARD && frame->header.length == 8u) {
+                    const USB_KeyboardReport_t *keyboard =
+                        (const USB_KeyboardReport_t *)frame->payload;
+                    uint8_t sequence_low = (uint8_t)frame->header.sequence;
+                    uint8_t first_key = keyboard->keycode[0];
+                    bool held = keyboard->modifier != 0u;
+                    for (uint8_t i = 0u; i < 6u && !held; i++)
+                        held = keyboard->keycode[i] != 0u;
+                    s_keyboard_lease_active = held;
+                    if (held) s_keyboard_lease_refreshed = RTC_GetCycle32k();
                     if (s_keyboard_rx_count != 0xFFFFu) s_keyboard_rx_count++;
                     if (g_USB_DeviceState == USB_STATE_CONFIGURED &&
-                        USB_Keyboard_TrySend((const USB_KeyboardReport_t *)frame->payload)) {
+                        USB_Keyboard_TrySend(keyboard)) {
                         if (s_keyboard_usb_sent_count != 0xFFFFu) s_keyboard_usb_sent_count++;
+                        Receiver_Log_Event(RX_LOG_HID_KEYBOARD_DIRECT,
+                                           sequence_low, first_key);
                     } else {
                         if (g_USB_DeviceState == USB_STATE_CONFIGURED &&
                             s_keyboard_usb_busy_count != 0xFFFFu) s_keyboard_usb_busy_count++;
-                        keyboard_enqueue((const USB_KeyboardReport_t *)frame->payload);
+                        keyboard_enqueue(keyboard);
+                        Receiver_Log_Event(RX_LOG_HID_KEYBOARD_QUEUED,
+                                           sequence_low, first_key);
                     }
                 } else if (frame->header.type == KBD_RADIO_FRAME_MOUSE && frame->header.length == 4u) {
                     if (g_USB_DeviceState != USB_STATE_CONFIGURED ||
@@ -678,9 +680,11 @@ static void flush_usb_reports(uint32_t now)
 
     if (s_keyboard_queue.count != 0u) {
         if (USB_Keyboard_TrySend(&s_keyboard_queue.items[s_keyboard_queue.head])) {
+            uint8_t first_key = s_keyboard_queue.items[s_keyboard_queue.head].keycode[0];
             s_keyboard_queue.head = (uint8_t)((s_keyboard_queue.head + 1u) % RX_REPORT_QUEUE_DEPTH);
             s_keyboard_queue.count--;
             if (s_keyboard_usb_sent_count != 0xFFFFu) s_keyboard_usb_sent_count++;
+            Receiver_Log_Event(RX_LOG_HID_KEYBOARD_FLUSHED, 0u, first_key);
         } else if (s_keyboard_usb_busy_count != 0xFFFFu) {
             s_keyboard_usb_busy_count++;
         }
@@ -909,6 +913,8 @@ void Receiver_Radio_RfLibraryInit(void)
     s_last_release_queued = RX_DIAG_NONE;
     s_last_release_sent = RX_DIAG_NONE;
     s_release_busy_count = 0u;
+    s_keyboard_lease_active = false;
+    s_keyboard_lease_refreshed = 0u;
     RF_LibInit(irq_cb);
     TMR2_TimerInit(GetSysClock() / 1000u);
     TMR2_ITCfg(ENABLE, TMR0_3_IT_CYC_END);
@@ -1008,6 +1014,17 @@ void Receiver_Radio_Process(void)
     }
 management_tx_done:
     uint32_t now = RTC_GetCycle32k();
+    if (s_keyboard_lease_active &&
+        rtc_elapsed(now, s_keyboard_lease_refreshed) >=
+            RX_KEYBOARD_LEASE_TICKS) {
+        USB_KeyboardReport_t keyboard = {0};
+        s_keyboard_lease_active = false;
+        memset(&s_keyboard_queue, 0, sizeof(s_keyboard_queue));
+        keyboard_enqueue(&keyboard);
+        s_last_release_queued = now;
+        Receiver_Log_Event(RX_LOG_HID_LEASE_EXPIRED,
+                           KBD_RECEIVER_STARTUP_STAGE, 0u);
+    }
     if (s_link_lost_log_pending) {
         s_link_lost_log_pending = false;
         Receiver_Log_Event(RX_LOG_LINK_LOST, KBD_RECEIVER_STARTUP_STAGE, 0u);

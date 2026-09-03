@@ -112,6 +112,43 @@ export const useDeviceStore = defineStore("device", () => {
     return JSON.parse(JSON.stringify(config)) as KeymapConfig;
   }
 
+  function keymapConfigChanged(
+    current: KeymapConfig,
+    original: KeymapConfig,
+  ): boolean {
+    // currentLayer is live device state, not a persisted editor change.
+    return (
+      current.numLayers !== original.numLayers ||
+      current.defaultLayer !== original.defaultLayer ||
+      JSON.stringify(current.layers) !== JSON.stringify(original.layers)
+    );
+  }
+
+  function applyRuntimeLayer(layerIndex: number): void {
+    const maxLayers = Math.max(1, keymap.value.numLayers);
+    const nextLayer = Math.min(Math.max(layerIndex, 0), maxLayers - 1);
+    const hadConfigChanges = keymapConfigChanged(
+      keymap.value,
+      keymapOriginal.value,
+    );
+
+    if (deviceStatus.value) {
+      deviceStatus.value = {
+        ...deviceStatus.value,
+        currentLayer: nextLayer,
+      };
+    }
+    keymap.value.currentLayer = nextLayer;
+    keymapOriginal.value.currentLayer = nextLayer;
+
+    // Follow a physical layer switch while the editor is clean. If the user
+    // is editing a mapping, retain that editing context and only update the
+    // live-layer indicator.
+    if (!hadConfigChanges) {
+      currentEditLayer.value = nextLayer;
+    }
+  }
+
   function countMappedActions(config: KeymapConfig): number {
     return config.layers
       .slice(0, config.numLayers)
@@ -257,9 +294,7 @@ export const useDeviceStore = defineStore("device", () => {
 
   /** 是否有未保存的更改 */
   const hasChanges = computed(() => {
-    return (
-      JSON.stringify(keymap.value) !== JSON.stringify(keymapOriginal.value)
-    );
+    return keymapConfigChanged(keymap.value, keymapOriginal.value);
   });
 
   // Keep the button actionable when the user has made an edit. saveKeymap()
@@ -536,12 +571,17 @@ export const useDeviceStore = defineStore("device", () => {
         0x99: '收到远端管理响应首片', 0x9a: '收到远端管理响应分片',
         0x9b: '远端管理响应完整', 0x9c: '远端管理 RF DMA 忙',
         0x9d: '远端管理帧 CRC 错误', 0x9e: '远端管理响应分片错误',
+        0x9f: 'RF 键盘报告已直接提交 USB',
+        0xa0: 'RF 键盘报告进入 USB 队列',
+        0xa1: 'RF 键盘队列报告已提交 USB',
       };
       useTerminalStore().addEntry({
         direction: 'device', level: entry.result === 0 ? 'info' : 'error',
         command: 'LOG_SYSTEM', cmdHex: '70', sub: 7, dataLen: 3,
         rawHex: `70 07 03 ${entry.event.toString(16).padStart(2, '0')} ${entry.stage.toString(16).padStart(2, '0')} ${entry.result.toString(16).padStart(2, '0')}`.toUpperCase(),
-        parsed: `${names[entry.event] ?? `启动事件 0x${entry.event.toString(16)}`} | 阶段 ${entry.stage}${entry.result === 0 ? '' : ` | 结果 ${entry.result}`}`,
+        parsed: entry.event >= 0x9f && entry.event <= 0xa1
+          ? `${names[entry.event]} | RF序号低8位 ${entry.stage} | ${entry.result === 0 ? '全零释放' : `键码 0x${entry.result.toString(16).padStart(2, '0')}`}`
+          : `${names[entry.event] ?? `启动事件 0x${entry.event.toString(16)}`} | 阶段 ${entry.stage}${entry.result === 0 ? '' : ` | 结果 ${entry.result}`}`,
         category: 'system',
       });
     }
@@ -796,10 +836,7 @@ export const useDeviceStore = defineStore("device", () => {
   /** 切换设备实际当前层（与软件编辑层分离）。 */
   async function setDeviceLayer(layerIndex: number): Promise<void> {
     const state = await hidService.setLayerState(layerIndex);
-    if (deviceStatus.value) {
-      deviceStatus.value = { ...deviceStatus.value, currentLayer: state.currentLayer };
-    }
-    keymap.value.currentLayer = state.currentLayer;
+    applyRuntimeLayer(state.currentLayer);
   }
 
   /** 增加层数 */
@@ -913,11 +950,7 @@ export const useDeviceStore = defineStore("device", () => {
       if (capabilities.value.receiverRole && remoteTargetLoaded.value && keymapLoaded.value) {
         try {
           const remoteLayer = await hidService.getLayerState();
-          deviceStatus.value = {
-            ...deviceStatus.value,
-            currentLayer: remoteLayer.currentLayer,
-          };
-          keymap.value.currentLayer = remoteLayer.currentLayer;
+          applyRuntimeLayer(remoteLayer.currentLayer);
         } catch {
           /* A transient RF miss must not discard the last known layer. */
         }
@@ -926,12 +959,6 @@ export const useDeviceStore = defineStore("device", () => {
       // part of the connection/status path: an empty or busy diagnostic
       // queue must never produce a visible connection error or interfere with
       // pairing and remote configuration transactions.
-
-      // 注释掉自动同步：让编辑层和当前层独立
-      // 用户可以在设备使用层5的同时，在软件上编辑层2
-      // if (status.currentLayer !== currentEditLayer.value) {
-      //   currentEditLayer.value = status.currentLayer;
-      // }
 
       _pollTick++;
       if (supportsBattery.value && (!capabilities.value.receiverRole || keymapLoaded.value)) {

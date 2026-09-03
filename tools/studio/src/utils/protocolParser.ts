@@ -772,6 +772,11 @@ export function parseLogFrame(frame: Uint8Array): {
           [SystemLogEvent.RF_MGMT_EXEC]: "键盘执行管理命令",
           [SystemLogEvent.RF_MGMT_TX]: "键盘提交管理响应",
           [SystemLogEvent.RF_MGMT_DROP]: "键盘管理帧丢弃",
+          [SystemLogEvent.MACRO_START]: "宏开始执行",
+          [SystemLogEvent.MACRO_ACTION]: "宏 HID 动作已提交",
+          [SystemLogEvent.MACRO_RELEASE]: "宏最终释放已提交",
+          [SystemLogEvent.MACRO_DONE]: "宏执行完成",
+          [SystemLogEvent.MACRO_RETRY]: "宏 HID 动作等待重试",
           0x80: "接收器启动",
           0x81: "USB 已配置",
           0x82: "时间基准初始化开始",
@@ -803,10 +808,29 @@ export function parseLogFrame(frame: Uint8Array): {
           0x9c: "远端管理 RF DMA 忙",
           0x9d: "远端管理帧 CRC 错误",
           0x9e: "远端管理响应分片错误",
+          0x9f: "RF 键盘报告已直接提交 USB",
+          0xa0: "RF 键盘报告进入 USB 队列",
+          0xa1: "RF 键盘队列报告已提交 USB",
+          0xa2: "RF 按键状态租约过期，强制释放",
         };
         parsed += ` | ${events[data[0]] || hex(data[0])}`;
         if (data[0] >= SystemLogEvent.RF_MGMT_RX && data[0] <= SystemLogEvent.RF_MGMT_DROP && len >= 3) {
           parsed += ` | 命令 0x${data[1].toString(16).padStart(2, '0')} | 值 ${data[2]}`;
+        }
+        if (data[0] >= SystemLogEvent.MACRO_START && data[0] <= SystemLogEvent.MACRO_RETRY && len >= 3) {
+          if (data[0] === SystemLogEvent.MACRO_START) {
+            parsed += ` | 槽位 ${data[1]} | 动作数 ${data[2]}`;
+          } else if (data[0] === SystemLogEvent.MACRO_ACTION || data[0] === SystemLogEvent.MACRO_RETRY) {
+            parsed += ` | 动作 0x${data[1].toString(16).padStart(2, "0")} | 参数 0x${data[2].toString(16).padStart(2, "0")}`;
+          } else if (data[0] === SystemLogEvent.MACRO_RELEASE) {
+            parsed += ` | 第 ${data[1]} 次全零键盘报告`;
+          } else {
+            parsed += ` | 槽位 ${data[1]}`;
+          }
+        }
+        if (data[0] >= 0x9f && data[0] <= 0xa1 && len >= 3) {
+          const key = data[2] === 0 ? "全零释放" : getKeycodeName(data[2], 0);
+          parsed += ` | RF序号低8位 ${data[1]} | ${key}`;
         }
         if (data[0] >= 0x80 && len >= 2) {
           parsed += ` | 阶段 ${data[1]}`;

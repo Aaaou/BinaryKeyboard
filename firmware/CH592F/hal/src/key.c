@@ -121,6 +121,7 @@
 #include "key.h"
 #include "kbd_config.h"
 #include "kbd_mode.h"
+#include "kbd_macro.h"
 #include "kbd_rgb.h"
 #include "encoder.h"
 
@@ -711,6 +712,7 @@ __INTERRUPT __HIGH_CODE void TMR0_IRQHandler(void)
 
     s_tick_ms++;
     KBD_RGB_TimerTick1ms();
+    KBD_Macro_TimerTick1ms();
 
     for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
     {
