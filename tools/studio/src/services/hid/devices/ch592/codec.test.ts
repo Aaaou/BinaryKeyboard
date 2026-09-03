@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Ch592Codec } from './codec';
 import { createDefaultRgbConfig } from '@/types/protocol';
 
-function rgbResponse(payloadLength: number, seamlessWake = 1): DataView {
+function rgbResponse(payloadLength: number, seamlessWake = 1, deepSeamlessWake2g4 = 1): DataView {
   const bytes = new Uint8Array(64);
   bytes[2] = payloadLength;
   bytes[3] = 0;
@@ -19,6 +19,7 @@ function rgbResponse(payloadLength: number, seamlessWake = 1): DataView {
   bytes[14] = 1;
   bytes[15] = 1;
   bytes[16] = seamlessWake;
+  bytes[17] = deepSeamlessWake2g4;
   return new DataView(bytes.buffer);
 }
 
@@ -34,11 +35,23 @@ describe('CH592 seamless wake RGB protocol extension', () => {
     expect(payload[12]).toBe(1);
   });
 
+  it('reads and writes the optional 2.4G DEEP wake byte', () => {
+    const codec = new Ch592Codec();
+    const config = codec.parseRgbConfig(rgbResponse(15, 1, 0));
+
+    expect(config.deepSeamlessWake2g4Enabled).toBe(false);
+    config.deepSeamlessWake2g4Enabled = true;
+    const payload = codec.buildSetRgbPayload(config);
+    expect(payload).toHaveLength(14);
+    expect(payload[13]).toBe(1);
+  });
+
   it('keeps the legacy 12-byte request for old firmware', () => {
     const codec = new Ch592Codec();
     const config = codec.parseRgbConfig(rgbResponse(13));
 
     expect(config.seamlessWakeEnabled).toBe(true);
+    expect(config.deepSeamlessWake2g4Enabled).toBeUndefined();
     config.seamlessWakeEnabled = false;
     expect(codec.buildSetRgbPayload(config)).toHaveLength(12);
   });

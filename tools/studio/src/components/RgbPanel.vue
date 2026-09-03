@@ -107,6 +107,14 @@
         </label>
       </div>
 
+      <div v-if="show2g4DeepSeamlessWake" class="rgb-item">
+        <span class="rgb-label">2.4G DEEP 无感唤醒</span>
+        <label class="rgb-switch">
+          <input type="checkbox" v-model="deepSeamlessWake2g4Model" @change="autoSaveRgb" />
+          <span>{{ deepSeamlessWake2g4Model ? '重连后执行唤醒首键' : '首键仅唤醒' }}</span>
+        </label>
+      </div>
+
       <div v-if="deviceStore.deviceInfo?.protocol === DeviceProtocol.CH552" class="rgb-item">
         <span class="rgb-label">USB 轮询率</span>
         <select v-model.number="pollRateModel" class="rgb-select" @change="autoSaveRgb">
@@ -178,6 +186,13 @@ const showSleepConfig = computed(
   () => deviceStore.deviceInfo?.protocol === DeviceProtocol.CH592,
 );
 
+const show2g4DeepSeamlessWake = computed(
+  () =>
+    showSleepConfig.value &&
+    deviceStore.rgbConfig.deepSeamlessWake2g4Enabled !== undefined &&
+    (deviceStore.capabilities.receiverRole || deviceStore.deviceStatus?.workMode === 2),
+);
+
 const showSpeedSlider = computed(
   () =>
     deviceStore.supportsRgb &&
@@ -209,6 +224,11 @@ const pollRateModel = computed({
 const seamlessWakeModel = computed({
   get: () => deviceStore.rgbConfig.seamlessWakeEnabled !== false,
   set: (v: boolean) => { deviceStore.rgbConfig.seamlessWakeEnabled = v; },
+});
+
+const deepSeamlessWake2g4Model = computed({
+  get: () => deviceStore.rgbConfig.deepSeamlessWake2g4Enabled === true,
+  set: (v: boolean) => { deviceStore.rgbConfig.deepSeamlessWake2g4Enabled = v; },
 });
 
 const colorHex = computed({

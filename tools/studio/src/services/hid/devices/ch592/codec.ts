@@ -69,12 +69,14 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   readonly chipFamily = FIRMWARE_VERSION_META.CH592F.chipFamily;
   private meowfsCache: MeowFsCache | null = null;
   private supportsSeamlessWake = false;
+  private supports2g4DeepSeamlessWake = false;
   private receiverProxy = false;
   private receiverCooldownUntil = 0;
 
   resetState(): void {
     this.meowfsCache = null;
     this.supportsSeamlessWake = false;
+    this.supports2g4DeepSeamlessWake = false;
     this.receiverProxy = false;
     this.receiverCooldownUntil = 0;
     this.capabilities = CH592_CAPABILITIES;
@@ -319,6 +321,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       throw new Error(`RGB_GET 返回长度错误: ${payloadLength}`);
     }
     this.supportsSeamlessWake = resp.getUint8(2) >= 14;
+    this.supports2g4DeepSeamlessWake = resp.getUint8(2) >= 15;
     return {
       enabled: resp.getUint8(d + 1) !== 0,
       mode: resp.getUint8(d + 2),
@@ -335,11 +338,16 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       seamlessWakeEnabled: this.supportsSeamlessWake
         ? resp.getUint8(d + 13) !== 0
         : true,
+      deepSeamlessWake2g4Enabled: this.supports2g4DeepSeamlessWake
+        ? resp.getUint8(d + 14) !== 0
+        : undefined,
     };
   }
 
   buildSetRgbPayload(config: RgbConfig): Uint8Array {
-    const data = new Uint8Array(this.supportsSeamlessWake ? 13 : 12);
+    const data = new Uint8Array(
+      this.supports2g4DeepSeamlessWake ? 14 : this.supportsSeamlessWake ? 13 : 12,
+    );
     data[0] = config.enabled ? 1 : 0;
     data[1] = config.mode;
     data[2] = config.brightness;
@@ -354,6 +362,9 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     data[11] = config.deepSleepMin!;
     if (this.supportsSeamlessWake) {
       data[12] = config.seamlessWakeEnabled === false ? 0 : 1;
+    }
+    if (this.supports2g4DeepSeamlessWake) {
+      data[13] = config.deepSeamlessWake2g4Enabled === false ? 0 : 1;
     }
     return data;
   }
