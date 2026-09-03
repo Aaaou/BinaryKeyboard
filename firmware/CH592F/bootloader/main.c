@@ -91,6 +91,20 @@ static uint8_t ReadPreferredMode(void)
     return found && best.last_mode <= 2u ? best.last_mode : 0u;
 }
 
+static uint8_t ReadSelectedMode(void)
+{
+    trimode_selector_t selector __attribute__((aligned(4)));
+    if (EEPROM_READ(TRIMODE_SELECTOR_DATAFLASH_ADD, &selector,
+                    sizeof(selector)) == 0 &&
+        selector.magic == TRIMODE_SELECTOR_MAGIC &&
+        selector.tail == TRIMODE_SELECTOR_TAIL &&
+        selector.mode <= 2u &&
+        selector.mode_inv == (uint8_t)~selector.mode) {
+        return selector.mode;
+    }
+    return ReadPreferredMode();
+}
+
 static void JumpToImage(uint32_t marker)
 {
     uint32_t addr = 0;
@@ -143,7 +157,7 @@ int main(void)
 #endif
 
 #if KBD_TRIMODE_DISPATCHER
-    uint32_t preferred = ReadPreferredMode() == 2u ? IMAGE_FLAG_2G4 : IMAGE_FLAG_BLE;
+    uint32_t preferred = ReadSelectedMode() == 2u ? IMAGE_FLAG_2G4 : IMAGE_FLAG_BLE;
     if (ReadImageFlag() == IMAGE_IAP_FLAG) {
         uint32_t marker = *(volatile uint32_t *)(IMAGE_B_START_ADD + 4u);
         uint32_t target = marker == IMAGE_FLAG_2G4 ? IMAGE_2G4_START_ADD :

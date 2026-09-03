@@ -1,7 +1,7 @@
 <template>
   <div class="panel wireless-panel">
     <h3 class="panel-title"><i class="pi pi-wifi"></i>2.4G 无线与接收器</h3>
-    <p class="hint">仅 RF-enabled 键盘固件或 CH592F 接收器显示。</p>
+    <p class="hint">{{ modeHint }}</p>
     <div class="status-row"><span>配码状态</span><strong>{{ pairLabel }}</strong></div>
     <div class="status-row"><span>设备角色</span><strong>{{ roleLabel }}</strong></div>
     <div v-if="caps.enabled && status.state !== 'unsupported'" class="identity-block">
@@ -26,9 +26,9 @@
       </template>
     </div>
     <div class="actions">
-      <button type="button" :disabled="busy" @click="start">开始配码</button>
-      <button type="button" :disabled="busy" @click="cancel">取消配码</button>
-      <button type="button" class="danger" :disabled="busy" @click="clear">清除绑定</button>
+      <button type="button" :disabled="controlsDisabled" @click="start">开始配码</button>
+      <button type="button" :disabled="controlsDisabled" @click="cancel">取消配码</button>
+      <button type="button" class="danger" :disabled="controlsDisabled" @click="clear">清除绑定</button>
     </div>
     <div v-if="caps.role === 'receiver'" class="poll-row">
       <label for="radio-poll-rate">USB 轮询率</label>
@@ -44,9 +44,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { hidService } from '@/services/HidService';
 import { showToast } from '@/services/toastService';
+import { useDeviceStore } from '@/stores/deviceStore';
 import type { PairStatus, RadioCapabilities } from '@/services/hid/common/types';
 
 const busy = ref(false);
+const deviceStore = useDeviceStore();
 const caps = ref<RadioCapabilities>({ role: 'keyboard', enabled: false, pollRates: [125, 250, 500, 1000] });
 const status = ref<PairStatus>({ state: 'unsupported', session: 0, deviceId: 0 });
 const pollRate = ref(1000);
@@ -54,6 +56,13 @@ const pollRates = computed(() => caps.value.pollRates.length ? caps.value.pollRa
 const pairLabel = computed(() => ({ unbound: '未绑定', pairing: '配码中', bound: '已绑定', connected: '已连接', inconsistent: '两端绑定不一致', unsupported: '未启用' }[status.value.state]));
 const roleLabel = computed(() => caps.value.role === 'receiver' ? '接收器' : '键盘');
 const lastFrameLabel = computed(() => status.value.lastValidAgeMs == null ? '尚未收到' : `${status.value.lastValidAgeMs} ms 前`);
+const radioImageActive = computed(() => caps.value.role === 'receiver' || deviceStore.deviceStatus?.workMode === 2);
+const controlsDisabled = computed(() => busy.value || !caps.value.enabled || !radioImageActive.value);
+const modeHint = computed(() => {
+  if (caps.value.role === 'receiver' || radioImageActive.value) return '当前 2.4G 射频实例可执行配码和绑定维护。';
+  if (deviceStore.capabilities.trimode) return '当前是 USB/BLE 子镜像；切换到 2.4G 模式并等待设备重新连接后可配码。';
+  return '当前固件未启用 2.4G 射频实例。';
+});
 
 async function refresh() {
   try {
@@ -73,6 +82,10 @@ async function run(action: () => Promise<void>, message: string) {
   finally { busy.value = false; }
 }
 async function start() {
+  if (!radioImageActive.value) {
+    showToast('warn', '请先切换模式', '三模键盘需要先切换到 2.4G 模式，重新连接后才能开始配码');
+    return;
+  }
   busy.value = true;
   try {
     // Pairing starts an RF role asynchronously.  Acknowledging the request is

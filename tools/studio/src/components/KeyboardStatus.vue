@@ -154,13 +154,13 @@ const connectionMode = computed(() => {
   if (isReceiver.value) return 'USB 管理通道';
   if (!deviceStore.supportsWireless) return 'USB 模式';
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
-  return mode === 1 ? 'BLE 模式' : 'USB 模式';
+  return mode === 1 ? 'BLE 模式' : mode === 2 ? '2.4G 模式' : 'USB 模式';
 });
 
 const connectionIcon = computed(() => {
   if (isReceiver.value) return 'pi-desktop';
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
-  return mode === 1 ? 'pi-wifi' : 'pi-link';
+  return mode === 1 || mode === 2 ? 'pi-wifi' : 'pi-link';
 });
 
 const receiverStageLabel = computed(() => {

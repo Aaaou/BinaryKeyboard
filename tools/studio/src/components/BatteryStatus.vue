@@ -98,7 +98,7 @@ const statusIcon = computed(() => {
 
 const workModeText = computed(() => {
   const mode = deviceStore.deviceStatus?.workMode ?? 0;
-  return mode === 1 ? 'BLE' : 'USB';
+  return mode === 1 ? 'BLE' : mode === 2 ? '2.4G' : 'USB';
 });
 
 const cssVars = computed(() => ({

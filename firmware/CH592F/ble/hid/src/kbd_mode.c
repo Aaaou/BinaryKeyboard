@@ -283,6 +283,8 @@ void KBD_Mode_SuppressWakeForFn(uint8_t fn_id)
 
 int KBD_Mode_Switch(kbd_work_mode_t mode)
 {
+    int ret;
+
     if (g_mode_switching)
     {
         return -1;
@@ -302,8 +304,29 @@ int KBD_Mode_Switch(kbd_work_mode_t mode)
     KBD_Mode_ReleaseAllKeys();
 
     /* 保存目标模式到 DataFlash */
-    KBD_SetLastMode(mode);
-    KBD_Storage_FlushRuntime(); /* 立即落盘，确保复位前写入完成 */
+    ret = KBD_SetLastMode(mode);
+    if (ret != 0)
+    {
+        LOG_E(TAG, "save target mode %d failed: %d", mode, ret);
+        g_mode_switching = false;
+        return -3;
+    }
+    ret = KBD_Storage_FlushRuntime(); /* 立即落盘，确保复位前写入完成 */
+    if (ret != 0)
+    {
+        LOG_E(TAG, "flush target mode %d failed: %d", mode, ret);
+        g_mode_switching = false;
+        return -4;
+    }
+#if KBD_TRIMODE_ENABLED
+    ret = KBD_Storage_WriteTrimodeSelector((uint8_t)mode);
+    if (ret != 0)
+    {
+        LOG_E(TAG, "write boot selector %d failed: %d", mode, ret);
+        g_mode_switching = false;
+        return -5;
+    }
+#endif
 
     /* 等待 Flash 写入和外设稳定 */
     mDelaymS(10);

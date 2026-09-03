@@ -54,6 +54,14 @@ int KBD_Storage_Init(void);
 int KBD_Storage_FlushRuntime(void);
 
 /**
+ * @brief Persist and verify the image selector consumed by the trimode Dispatcher.
+ *
+ * @param[in] mode 0=USB, 1=BLE, 2=2.4G
+ * @return 0 success, negative on invalid mode or DataFlash failure
+ */
+int KBD_Storage_WriteTrimodeSelector(uint8_t mode);
+
+/**
  * @brief 推迟 runtime 热数据写入（避免在 BLE 连接/配对窗口写 Flash）
  *
  * 取消当前待执行的 runtime save 定时器，重新调度到指定延迟后执行。
@@ -182,6 +190,7 @@ int KBD_SetOsMode(uint8_t mode);
  *
  * @return 0 USB 模式
  * @return 1 BLE 模式
+ * @return 2 2.4G 模式
  * @return 0xFF 未知（首次启动或 Flash 无效）
  */
 uint8_t KBD_GetLastMode(void);
@@ -191,7 +200,7 @@ uint8_t KBD_GetLastMode(void);
  *
  * 通过 TMOS 200ms 防抖延迟写入，与 current_layer 共享同一页写操作。
  *
- * @param[in] mode 0=USB, 1=BLE
+ * @param[in] mode 0=USB, 1=BLE, 2=2.4G
  * @return 0 成功
  */
 int KBD_SetLastMode(uint8_t mode);

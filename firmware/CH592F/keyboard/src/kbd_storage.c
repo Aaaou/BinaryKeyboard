@@ -28,6 +28,7 @@
 #include "ble_config.h"
 #include "debug.h"
 #include "kbd_config.h"
+#include "iap_config.h"
 #include <string.h>
 
 /** @brief 模块日志标签 */
@@ -688,6 +689,38 @@ int KBD_Storage_FlushRuntime(void) {
   }
 
   return SaveRuntimeState();
+}
+
+int KBD_Storage_WriteTrimodeSelector(uint8_t mode) {
+#if KBD_TRIMODE_ENABLED
+  __attribute__((aligned(4))) trimode_selector_t selector = {
+      .magic = TRIMODE_SELECTOR_MAGIC,
+      .mode = mode,
+      .mode_inv = (uint8_t)~mode,
+      .tail = TRIMODE_SELECTOR_TAIL,
+  };
+  __attribute__((aligned(4))) trimode_selector_t verify;
+
+  if (mode > 2u) return -1;
+  if (EEPROM_ERASE(TRIMODE_SELECTOR_DATAFLASH_ADD, EEPROM_PAGE_SIZE) != 0) {
+    LOG_E(TAG, "Erase trimode selector failed");
+    return -2;
+  }
+  if (EEPROM_WRITE(TRIMODE_SELECTOR_DATAFLASH_ADD, &selector,
+                   sizeof(selector)) != 0) {
+    LOG_E(TAG, "Write trimode selector failed");
+    return -3;
+  }
+  memset(&verify, 0, sizeof(verify));
+  if (EEPROM_READ(TRIMODE_SELECTOR_DATAFLASH_ADD, &verify, sizeof(verify)) != 0 ||
+      memcmp(&verify, &selector, sizeof(selector)) != 0) {
+    LOG_E(TAG, "Verify trimode selector failed");
+    return -4;
+  }
+#else
+  (void)mode;
+#endif
+  return 0;
 }
 
 void KBD_Storage_PollStatus(kbd_storage_status_t *status) {
