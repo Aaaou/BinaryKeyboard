@@ -60,6 +60,8 @@ static const uint8_t s_mouse_button_bits[5] = {
 static void ResetInputState(void);
 static void RebuildKeyboardReport(void);
 static bool TrySyncKeyboardReport(void);
+static void ProcessFnEvents(void);
+static void DiscardQueuedHidInput(void);
 static void DiscardQueuedInput(void);
 static void UpdateKeycodeRefcount(uint8_t keycode, bool pressed);
 static void UpdateModifierMask(uint8_t mask, bool pressed);
@@ -100,7 +102,6 @@ void KBD_Core_Init(void)
 void KBD_Core_Process(void)
 {
     key_event_t key_evt;
-    fnkey_event_t fn_evt;
 
     Key_ServiceDeepWakeKeys(KBD_Mode_IsInputReady() ? 1u : 0u);
     if (Key_IsDeepWakeRecoveryPending())
@@ -122,8 +123,12 @@ void KBD_Core_Process(void)
 
     if (!KBD_Mode_IsInputReady())
     {
-        DiscardQueuedInput();
+        /* Transport readiness only gates HID reports. Local FN controls must
+         * remain available so an unplugged USB mode can switch back to a
+         * wireless mode without first attaching a host. */
+        DiscardQueuedHidInput();
         ResetInputState();
+        ProcessFnEvents();
         return;
     }
 
@@ -147,7 +152,14 @@ void KBD_Core_Process(void)
         TrySyncKeyboardReport();
     }
 
-    /* 处理 FN 按键事件 */
+    ProcessFnEvents();
+}
+
+static void ProcessFnEvents(void)
+{
+    fnkey_event_t fn_evt;
+
+    /* FN actions are local controls and do not require a ready HID transport. */
     while (FnKey_GetEvent(&fn_evt))
     {
         KBD_Core_HandleFnEvent(&fn_evt);
@@ -434,13 +446,19 @@ static bool TrySyncKeyboardReport(void)
     return false;
 }
 
-static void DiscardQueuedInput(void)
+static void DiscardQueuedHidInput(void)
 {
     key_event_t key_evt;
-    fnkey_event_t fn_evt;
 
     while (Key_GetEvent(&key_evt)) {}
     while (Encoder_GetEvent(&key_evt)) {}
+}
+
+static void DiscardQueuedInput(void)
+{
+    fnkey_event_t fn_evt;
+
+    DiscardQueuedHidInput();
     while (FnKey_GetEvent(&fn_evt)) {}
 }
 
