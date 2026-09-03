@@ -890,11 +890,15 @@ export const useDeviceStore = defineStore("device", () => {
         }
       }
       const status = await hidService.getSysStatus();
-      if (capabilities.value.receiverRole && deviceStatus.value) {
-        /* Receiver SYS_STATUS has no battery. Preserve the most recent remote
-         * keyboard reading until the following BATTERY transaction completes. */
-        status.batteryLevel = deviceStatus.value.batteryLevel;
-        status.isCharging = deviceStatus.value.isCharging;
+      if (capabilities.value.receiverRole) {
+        /* Receiver SYS_STATUS describes the receiver itself: its layer is
+         * always zero and it has no battery. Keep the last confirmed remote
+         * keyboard values until their dedicated RF queries succeed. */
+        status.currentLayer = deviceStatus.value?.currentLayer ?? keymap.value.currentLayer;
+        if (deviceStatus.value) {
+          status.batteryLevel = deviceStatus.value.batteryLevel;
+          status.isCharging = deviceStatus.value.isCharging;
+        }
       }
       deviceStatus.value = status;
       if (capabilities.value.receiverRole) {
