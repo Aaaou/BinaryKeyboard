@@ -94,6 +94,12 @@ jobs:
           BK_BUILD_NUMBER: ${{ needs.compute-versions.outputs.ch592_patch }}
         run: python3 tools/scripts/ch592f.py build-full --keyboard ${{ matrix.keyboard }} --profile release --build-number "$BK_BUILD_NUMBER"
 
+      - name: Build trimode package
+        if: matrix.keyboard != 'RECEIVER'
+        env:
+          BK_BUILD_NUMBER: ${{ needs.compute-versions.outputs.ch592_patch }}
+        run: python3 tools/scripts/ch592_trimode_full.py --keyboard ${{ matrix.keyboard }}
+
       - name: Resolve artifacts
         id: artifacts
         run: |
@@ -107,6 +113,8 @@ jobs:
           path: |
             ${{ steps.artifacts.outputs.bin }}
             ${{ steps.artifacts.outputs.full_bin }}
+            firmware/CH592F/build/trimode-*/CH592F-2G4-${{ matrix.keyboard }}-TRIMODE-*.bin
+            firmware/CH592F/build/trimode-*/CH592F-2G4-${{ matrix.keyboard }}-TRIMODE-*.hex
           retention-days: 7
 
       - name: Emit size report
@@ -757,6 +765,7 @@ jobs:
           mkdir -p dist/firmware/ch592f dist/firmware/ch552g
           cp dist/CH592F-*-app.bin dist/firmware/ch592f/
           cp dist/CH592F-*-full.bin dist/firmware/ch592f/
+          cp dist/CH592F-2G4-*-TRIMODE-*.hex dist/firmware/ch592f/
           cp dist/CH552G-*.bin dist/firmware/ch552g/
 
       - name: Upload pages-firmware artifact
@@ -777,6 +786,8 @@ jobs:
           prerelease: false
           files: |
             dist/CH592F-*-full.bin
+            dist/CH592F-2G4-*-TRIMODE-*-app.bin
+            dist/CH592F-2G4-*-TRIMODE-*.hex
             dist/CH552G-*.bin
             dist/BinaryKeyboard-ISP-linux-amd64-*-portable.tar.gz
             dist/BinaryKeyboard-ISP-linux-arm64-*-portable.tar.gz

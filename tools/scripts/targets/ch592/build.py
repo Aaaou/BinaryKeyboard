@@ -576,20 +576,21 @@ def emit_size_json(keyboard: str, profile: str, out: Path) -> int:
 
 
 IAP_BUILD_DIR = IAP_DIR / "build"
+IAP_TRIMODE_BUILD_DIR = IAP_DIR / "build-trimode"
 JUMPIAP_BUILD_DIR = JUMPIAP_DIR / "build"
 JUMPIAP_IMMUTABLE_BUILD_DIR = JUMPIAP_DIR / "build-receiver-immutable"
 
 
-def bootloader_configure() -> Path:
+def bootloader_configure(trimode: bool = False) -> Path:
     cmake = find_cmake()
     if not cmake:
         die("CMake not found. Install CMake or add it to PATH.")
 
-    build_dir = IAP_BUILD_DIR
+    build_dir = IAP_TRIMODE_BUILD_DIR if trimode else IAP_BUILD_DIR
     build_dir.mkdir(parents=True, exist_ok=True)
     sep()
     info("Configuring CH592F IAP app")
-    run([
+    args = [
         str(cmake),
         "-S", str(IAP_DIR),
         "-B", str(build_dir),
@@ -597,20 +598,23 @@ def bootloader_configure() -> Path:
         f"-DCMAKE_TOOLCHAIN_FILE={FIRMWARE_DIR / 'cmake' / 'toolchain-ch59x.cmake'}",
         "-DCMAKE_BUILD_TYPE=MinSizeRel",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-    ], cwd=PROJECT_ROOT)
+    ]
+    if trimode:
+        args.append("-DKBD_TRIMODE_DISPATCHER=ON")
+    run(args, cwd=PROJECT_ROOT)
     ok(f"IAP configure complete → {build_dir}")
     return build_dir
 
 
-def bootloader_build() -> Path:
+def bootloader_build(trimode: bool = False) -> Path:
     cmake = find_cmake()
     if not cmake:
         die("CMake not found. Install CMake or add it to PATH.")
 
-    build_dir = IAP_BUILD_DIR
+    build_dir = IAP_TRIMODE_BUILD_DIR if trimode else IAP_BUILD_DIR
     cache_file = build_dir / "CMakeCache.txt"
     if not _ninja_build_files_ready(build_dir):
-        bootloader_configure()
+        bootloader_configure(trimode=trimode)
 
     sep()
     info("Building CH592F IAP app")
@@ -626,17 +630,20 @@ def bootloader_build() -> Path:
 
 
 def bootloader_clean() -> None:
-    build_dir = IAP_BUILD_DIR
     sep()
-    if build_dir.is_dir():
-        shutil.rmtree(build_dir)
-        ok(f"Removed {build_dir}")
-    else:
+    removed = False
+    for build_dir in (IAP_BUILD_DIR, IAP_TRIMODE_BUILD_DIR):
+        if build_dir.is_dir():
+            shutil.rmtree(build_dir)
+            ok(f"Removed {build_dir}")
+            removed = True
+    if not removed:
         warn(f"Build directory does not exist: {build_dir}")
 
 
-def bootloader_hex_path() -> Path:
-    return IAP_BUILD_DIR / "CH592F_IAP.hex"
+def bootloader_hex_path(trimode: bool = False) -> Path:
+    build_dir = IAP_TRIMODE_BUILD_DIR if trimode else IAP_BUILD_DIR
+    return build_dir / "CH592F_IAP.hex"
 
 
 def jumpiap_configure(immutable: bool = False) -> Path:

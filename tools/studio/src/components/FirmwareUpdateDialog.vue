@@ -189,6 +189,11 @@ async function startUpdate() {
       props.targetVersion,
       model,
       (p) => { progress.value = p; },
+      {
+        trimode: deviceStore.deviceInfo?.capabilities.trimode === true,
+        currentWorkMode: deviceStore.deviceStatus?.workMode ?? 0,
+        waitForReconnect: (expectedSubimage) => hidService.waitForIapTransport(expectedSubimage),
+      },
     );
     progress.value = { stage: 'done', percent: 100, message: '更新完成' };
   } catch {

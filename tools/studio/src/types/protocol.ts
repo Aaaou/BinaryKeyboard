@@ -74,6 +74,8 @@ export interface DeviceCapabilities {
   iap: boolean;
   /** CH592F 2.4G radio backend and receiver control protocol. */
   radio2g4: boolean;
+  /** CH592F firmware contains separate USB/BLE and 2.4G application images. */
+  trimode: boolean;
   receiverRole: boolean;
 }
 
@@ -96,6 +98,7 @@ export function createDeviceCapabilities(
     wireless: true,
     iap: true,
     radio2g4: false,
+    trimode: false,
     receiverRole: false,
     ...overrides,
   };
@@ -118,6 +121,7 @@ export const CH552_CAPABILITIES = createDeviceCapabilities({
   wireless: false,
     iap: false,
     radio2g4: false,
+    trimode: false,
     receiverRole: false,
 });
 

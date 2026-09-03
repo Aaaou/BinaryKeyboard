@@ -1,19 +1,19 @@
 # 无线版快速开始
 
-基于 **CH592F** 的 USB / BLE 双模键盘。本页说明复刻、首刷和首次配对；成品操作见 [无线款使用手册](./manual.md)。
+基于 **CH592F** 的 USB / BLE / 2.4G 三模键盘。本页说明复刻、首刷和首次配对；成品操作见 [无线款使用手册](./manual.md)。
 
 ## 支持型号
 
 | 型号 | 输入 | 默认动作 | 层数 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| 5KEY | 5 个普通键 | `1` / `2` / `3` / `4` / `5` | 5 | USB / BLE 双模五键键盘 |
-| KNOB | 4 键 + 旋钮 | `1`~`4`，旋钮为音量加 / 音量减 / 静音 | 4 | USB / BLE 双模旋钮键盘 |
+| 5KEY | 5 个普通键 | `1` / `2` / `3` / `4` / `5` | 5 | USB / BLE / 2.4G 三模五键键盘 |
+| KNOB | 4 键 + 旋钮 | `1`~`4`，旋钮为音量加 / 音量减 / 静音 | 4 | USB / BLE / 2.4G 三模旋钮键盘 |
 
 无线版通用操作：
 
-- `FN1` 短按或长按：切换 USB / BLE 模式，切换时设备会重启进入目标模式。
+- `FN1` 短按或长按：按 `USB -> BLE -> 2.4G -> USB` 循环切换，切换时设备会保存模式并重启。
 - `FN2` 短按：切换到下一层。
-- `FN2` 长按：在 BLE 模式下清除配对信息并重启。
+- `FN2` 长按：BLE 下清除绑定，2.4G 下进入配码，USB 下无破坏性操作。
 - 按住 `BOOT` 再按普通键：切换到对应层。
 - 单击 `BOOT` 不再进入 IAP / Bootloader。
 
@@ -32,8 +32,8 @@
 ### 下载文件
 
 1. **固件** - 从 [GitHub Releases](https://github.com/MeowKJ/BinaryKeyboard/releases) 下载
-   - 首次烧录使用 `CH592F-<MODEL>-<version>-full.hex`
-   - 后续通过 Studio 热更新使用 `CH592F-<MODEL>-<version>-app.bin`
+   - 三模首次烧录使用 `CH592F-2G4-<MODEL>-TRIMODE-full.hex`
+   - 后续由 Studio 自动依次更新 `TRIMODE-radio-app.bin` 与 `TRIMODE-ble-app.bin`
 
 2. **外壳 STL** - 从 Releases 或 OSHWHub 下载（无线版专用，带电池仓）
 
@@ -127,6 +127,7 @@
 - [无线版改键软件](./remap.md)
 - [无线版固件开发](./dev.md)
 - [2.4G 配码与接收器设计](./2.4g-pairing.md)
+- [USB / BLE / 2.4G 三模架构](./trimode.md)
 - [2.4G 配码开发分支变更日志](./2.4g-pairing-change-log.md)
 
 不用时可关闭电源开关；设备闲置后会按当前休眠设置进入低功耗。问题排查见 [常见问题](/faq)。

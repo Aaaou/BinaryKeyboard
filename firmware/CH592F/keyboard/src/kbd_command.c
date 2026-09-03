@@ -276,10 +276,10 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data,
  * [11] 键盘类型 (kbd_type_t)
  * [12] 实际按键数 (当前类型)
  * [13] FN 键数量
- * [14] 2.4G RF backend 已启用 (0=当前 BLE-only 构建)
+ * [14] 2.4G 产品能力（当前镜像可为 USB/BLE 子镜像）
  * [15] 设备角色 (0=键盘, 1=接收器)
- * [16] 保留
- * [17] 保留
+ * [16] 三模多镜像固件
+ * [17] 当前子镜像（0=USB/BLE, 1=2.4G）
  */
 static void HandleSysInfo(const kbd_cmd_frame_t *frame)
 {
@@ -298,10 +298,10 @@ static void HandleSysInfo(const kbd_cmd_frame_t *frame)
   resp[11] = (uint8_t)KBD_GetType(); /* 键盘类型 */
   resp[12] = KBD_GetTotalKeyCount(); /* 实际键位数 */
   resp[13] = KBD_FN_NUM_KEYS;        /* FN 键数量 */
-  resp[14] = KBD_RADIO_2G4_ENABLED ? 1 : 0;
+  resp[14] = (KBD_RADIO_2G4_ENABLED || KBD_TRIMODE_ENABLED) ? 1 : 0;
   resp[15] = KBD_RECEIVER_BUILD ? 1 : 0;
-  resp[16] = 0;
-  resp[17] = 0;
+  resp[16] = KBD_TRIMODE_ENABLED ? 1 : 0;
+  resp[17] = KBD_TRIMODE_IMAGE ? 1 : 0;
 
   KBD_Command_SendResponse(frame->cmd == KBD_CMD_RADIO_REMOTE_CAPS
                                ? KBD_CMD_RADIO_REMOTE_CAPS
@@ -335,7 +335,7 @@ static void HandleSysStatus(const kbd_cmd_frame_t *frame)
 /* Contract probe for Studio. Ordinary USB/BLE builds report enabled=0. */
 static void HandleRadioCaps(const kbd_cmd_frame_t *frame)
 {
-  uint8_t resp[12] = {KBD_RESP_OK, KBD_RADIO_2G4_ENABLED ? 1 : 0,
+  uint8_t resp[12] = {KBD_RESP_OK, (KBD_RADIO_2G4_ENABLED || KBD_TRIMODE_ENABLED) ? 1 : 0,
                       KBD_RECEIVER_BUILD ? 1 : 0, 4,
                       0x7D, 0x00, 0xFA, 0x00, 0xF4, 0x01, 0xE8, 0x03};
   (void)frame;

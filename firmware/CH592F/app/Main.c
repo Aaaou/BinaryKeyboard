@@ -38,6 +38,14 @@ __attribute__((aligned(4))) uint32_t MEM_BUF[BLE_MEMHEAP_SIZE / 4];
 const uint8_t MacAddr[6] = {0x84, 0xC2, 0xE4, 0x03, 0x02, 0x02};
 #endif
 
+#if KBD_TRIMODE_ENABLED && KBD_TRIMODE_IMAGE
+__attribute__((used, aligned(4), section(".ImageFlag")))
+const uint32_t kbd_trimode_image_flag = 0x30de5820u;
+#elif KBD_TRIMODE_ENABLED
+__attribute__((used, aligned(4), section(".ImageFlag")))
+const uint32_t kbd_trimode_image_flag = 0x30de5821u;
+#endif
+
 /* ============== 主循环 ============== */
 __HIGH_CODE
 __attribute__((noinline)) void Main_Circulation(void)
@@ -131,11 +139,22 @@ int main(void)
     }
 
     /* 读取上次模式，决定本次启动路径 */
+#if KBD_TRIMODE_ENABLED && KBD_TRIMODE_IMAGE
+    /* Dispatcher 选择了固定的 2.4G 子镜像。 */
+    kbd_work_mode_t initial_mode = KBD_WORK_MODE_2G4;
+#else
     uint8_t last_mode = KBD_GetLastMode();
+#if KBD_TRIMODE_ENABLED
+    /* USB/BLE 子镜像不尝试初始化未链接的 RF FAST backend。 */
+    kbd_work_mode_t initial_mode = (last_mode <= KBD_WORK_MODE_BLE)
+        ? (kbd_work_mode_t)last_mode : KBD_WORK_MODE_USB;
+#else
     kbd_work_mode_t initial_mode = (last_mode <= KBD_WORK_MODE_2G4)
         ? (kbd_work_mode_t)last_mode : KBD_WORK_MODE_USB;
 #if KBD_RADIO_2G4_ENABLED
     initial_mode = KBD_WORK_MODE_2G4;
+#endif
+#endif
 #endif
 
     /*

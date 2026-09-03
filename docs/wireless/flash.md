@@ -65,8 +65,9 @@ python tools/scripts/console.py
 1. 用 USB 连接键盘
 2. 打开 BinaryKeyboard Studio
 3. 在设备信息卡片里点固件更新
-4. Studio 会下载当前协议对应的最新 `bin`
-5. 固件先写到 `Image B`，重启后由高地址 IAP 完成搬运
+4. Studio 会按设备能力下载当前协议对应的 `bin`
+5. 普通固件写入历史 Image B；三模固件先升级未运行子镜像，重连确认后再升级原模式子镜像
+6. 每次由高地址 IAP 校验镜像标识并搬运；双阶段结束后恢复升级前模式
 
 ::: tip
 如果 Release 已经更新、但 Studio 仍提示下载文件不存在，通常表示 GitHub Pages 上的固件镜像仍在同步。
@@ -86,5 +87,5 @@ python tools/scripts/console.py
 如果系统显示已配对但无法连接，在 BLE 模式长按 `FN2` 清除键盘端配对信息；同时在电脑或手机蓝牙列表中删除旧设备，再重新搜索。
 
 ::: warning 首刷后模式
-无线版会记住上一次 USB / BLE 模式。若设备看起来没有进入蓝牙广播，先短按 `FN1` 切换模式，再重新观察指示灯状态。
+无线版会记住上一次 USB / BLE / 2.4G 模式。若设备看起来没有进入蓝牙广播，短按 `FN1` 会按 `USB -> BLE -> 2.4G -> USB` 循环切换。
 :::

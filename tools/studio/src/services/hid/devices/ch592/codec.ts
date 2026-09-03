@@ -211,6 +211,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
           // exposes diagnostics and RF controls, never firmware writes.
           iap: false,
           radio2g4: true,
+          trimode: false,
           receiverRole: true,
         }
       : CH592_CAPABILITIES;
@@ -232,6 +233,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       capabilities: {
         ...this.capabilities,
         radio2g4: resp.getUint8(d + 14) !== 0,
+        trimode: resp.byteLength > d + 16 && resp.getUint8(d + 16) !== 0,
         receiverRole,
       },
     };
@@ -683,6 +685,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       ...CH592_CAPABILITIES,
       receiverRole: true,
       radio2g4: true,
+      trimode: false,
       explicitSave: true,
       reset: false,
       wireless: false,

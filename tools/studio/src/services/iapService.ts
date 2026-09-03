@@ -53,6 +53,10 @@ interface ReleaseFirmwareAsset {
   appBinUrl?: string;
   fullHexUrl?: string;
   hexUrl?: string;
+  trimodeFullBinUrl?: string;
+  trimodeFullHexUrl?: string;
+  bleAppBinUrl?: string;
+  radio2g4AppBinUrl?: string;
 }
 
 interface ReleaseManifest {
@@ -72,8 +76,9 @@ function getCh592Asset(manifest: ReleaseManifest, model: string): ReleaseFirmwar
 /** IAP_WRITE 每帧有效载荷 (64 - 3 header - 2 offset = 59, 取 56 对齐) */
 const WRITE_PAYLOAD_SIZE = 56;
 
-/** Image B 分区大小 (与固件 iap_config.h 一致) */
-const IMAGE_B_SIZE = 216 * 1024;
+const LEGACY_IMAGE_SIZE = 216 * 1024;
+const TRIMODE_BLE_IMAGE_SIZE = 184 * 1024;
+const TRIMODE_RADIO_IMAGE_SIZE = 64 * 1024;
 
 /** 页大小 (寻址单位) */
 const PAGE_SIZE = 256;
@@ -188,40 +193,56 @@ async function loadReleaseManifest(): Promise<ReleaseManifest> {
   }
 }
 
-async function resolveFirmwareUrl(
+export async function resolveFirmwareUrls(
   version: string,
   model: string,
-) {
+  trimode: boolean,
+  currentWorkMode: number,
+): Promise<string[]> {
   const remoteManifest = await loadReleaseManifest();
   const localManifest = LOCAL_RELEASE_MANIFEST as ReleaseManifest;
 
   let asset = getCh592Asset(remoteManifest, model);
-  if (!asset?.appBinUrl) {
+  const hasAsset = (value?: ReleaseFirmwareAsset) => trimode
+    ? !!(value?.bleAppBinUrl && value?.radio2g4AppBinUrl)
+    : !!value?.appBinUrl;
+  if (!hasAsset(asset)) {
     asset = getCh592Asset(localManifest, model);
   }
 
-  if (!asset?.appBinUrl) {
+  if (!hasAsset(asset)) {
     throw new Error(`发布清单里缺少 CH592F-${model} 的 OTA bin 下载地址`);
   }
+  if (!asset) throw new Error(`发布清单里缺少 CH592F-${model} 的 OTA bin 下载地址`);
   if (asset.version && asset.version !== version) {
     const localAsset = getCh592Asset(localManifest, model);
-    if (localAsset?.appBinUrl && localAsset.version === version) {
-      return localAsset.appBinUrl;
+    if (hasAsset(localAsset) && localAsset?.version === version) {
+      asset = localAsset;
+    } else {
+      throw new Error(`发布清单版本不匹配: 需要 ${version}，当前为 ${asset.version}`);
     }
-    throw new Error(`发布清单版本不匹配: 需要 ${version}，当前为 ${asset.version}`);
   }
-  return asset.appBinUrl;
+  if (trimode) {
+    if (!asset.bleAppBinUrl || !asset.radio2g4AppBinUrl) {
+      throw new Error(`发布清单里缺少 CH592F-${model} 的三模子镜像`);
+    }
+    return currentWorkMode === 2
+      ? [asset.bleAppBinUrl, asset.radio2g4AppBinUrl]
+      : [asset.radio2g4AppBinUrl, asset.bleAppBinUrl];
+  }
+  if (!asset.appBinUrl) throw new Error(`发布清单里缺少 CH592F-${model} 的 OTA bin 下载地址`);
+  return [asset.appBinUrl];
 }
 
 /**
  * 从 GitHub Release 下载固件 .bin
  */
 async function downloadFirmware(
+  url: string,
   version: string,
-  model: string,
   onProgress: IapProgressCallback,
+  maxSize: number,
 ): Promise<Uint8Array> {
-  const url = await resolveFirmwareUrl(version, model);
   onProgress({ stage: 'downloading', percent: 0, message: `正在下载固件 v${version}...` });
 
   const response = await fetch(url);
@@ -254,8 +275,8 @@ async function downloadFirmware(
     offset += chunk.length;
   }
 
-  if (firmware.length > IMAGE_B_SIZE) {
-    throw new Error(`固件文件过大: ${firmware.length} > ${IMAGE_B_SIZE}`);
+  if (firmware.length > maxSize) {
+    throw new Error(`固件文件过大: ${firmware.length} > ${maxSize}`);
   }
 
   onProgress({ stage: 'downloading', percent: 100, message: `下载完成 (${(firmware.length / 1024).toFixed(1)} KB)` });
@@ -266,29 +287,26 @@ async function downloadFirmware(
 // IAP 流程
 // ============================================================================
 
-/**
- * 执行完整的 IAP 固件更新流程
- */
-export async function performIapUpdate(
-  transport: IapTransport,
-  version: string,
-  model: string,
-  onProgress: IapProgressCallback,
-): Promise<void> {
-  try {
-    // 1. 下载固件
-    const firmware = await downloadFirmware(version, model, onProgress);
+export interface IapUpdateOptions {
+  trimode?: boolean;
+  currentWorkMode?: number;
+  waitForReconnect?: (expectedSubimage?: 0 | 1) => Promise<IapTransport>;
+}
 
-    // 2. IAP_PREPARE — 擦除 Image B
+async function performSingleImageUpdate(
+  transport: IapTransport,
+  firmware: Uint8Array,
+  onProgress: IapProgressCallback,
+  label: string,
+): Promise<void> {
     onProgress({ stage: 'preparing', percent: 0, message: '正在擦除暂存区...' });
     const prepResp = await transport.sendAndWait(
       buildFrame(Command.IAP_PREPARE, 0),
-      { timeout: 30_000 },  // 擦除 216KB 可能需要较长时间
+      { timeout: 30_000 },
     );
     checkResponse(prepResp, 'IAP_PREPARE');
     onProgress({ stage: 'preparing', percent: 100, message: '暂存区已就绪' });
 
-    // 3. IAP_WRITE — 分块写入固件
     const totalPages = Math.ceil(firmware.length / PAGE_SIZE);
     let pageIdx = 0;
 
@@ -320,11 +338,10 @@ export async function performIapUpdate(
       onProgress({
         stage: 'writing',
         percent: pct,
-        message: `正在写入固件... ${pct}% (${(offset / 1024).toFixed(0)}/${(firmware.length / 1024).toFixed(0)} KB)`,
+        message: `正在写入${label}... ${pct}% (${(offset / 1024).toFixed(0)}/${(firmware.length / 1024).toFixed(0)} KB)`,
       });
     }
 
-    // 4. IAP_VERIFY — CRC32 校验
     onProgress({ stage: 'verifying', percent: 0, message: '正在校验固件...' });
     const fwCrc = crc32(firmware);
     const verifyData = new Uint8Array(8);
@@ -340,7 +357,6 @@ export async function performIapUpdate(
     onProgress({ stage: 'verifying', percent: 100, message: '✅ 固件校验通过，准备重启...' });
     await new Promise(r => setTimeout(r, 1500));
 
-    // 5. IAP_ACTIVATE — 触发更新
     onProgress({ stage: 'activating', percent: 0, message: '正在激活更新...' });
     const activateResp = await transport.sendAndWait(
       buildFrame(Command.IAP_ACTIVATE, 0),
@@ -348,12 +364,46 @@ export async function performIapUpdate(
     );
     checkResponse(activateResp, 'IAP_ACTIVATE');
 
-    // 6. 设备重启中
     onProgress({
       stage: 'rebooting',
       percent: 50,
       message: '设备正在重启，请等待自动重连...',
     });
+}
+
+/** 执行单镜像或三模双镜像 IAP 更新。HID 命令格式保持不变。 */
+export async function performIapUpdate(
+  transport: IapTransport,
+  version: string,
+  model: string,
+  onProgress: IapProgressCallback,
+  options: IapUpdateOptions = {},
+): Promise<void> {
+  try {
+    const urls = await resolveFirmwareUrls(
+      version, model, options.trimode === true, options.currentWorkMode ?? 0,
+    );
+    let activeTransport = transport;
+    for (let index = 0; index < urls.length; index++) {
+      const label = urls.length > 1 ? `三模子镜像 ${index + 1}/${urls.length}` : '固件';
+      const updatesBle = options.currentWorkMode === 2 ? index === 0 : index === 1;
+      const maxSize = urls.length === 1
+        ? LEGACY_IMAGE_SIZE
+        : updatesBle ? TRIMODE_BLE_IMAGE_SIZE : TRIMODE_RADIO_IMAGE_SIZE;
+      const firmware = await downloadFirmware(urls[index], version, onProgress, maxSize);
+      await performSingleImageUpdate(activeTransport, firmware, onProgress, label);
+      if (urls.length > 1) {
+        if (!options.waitForReconnect) throw new Error('三模升级缺少设备重连处理');
+        onProgress({
+          stage: 'rebooting',
+          percent: index + 1 === urls.length ? 95 : 50,
+          message: index + 1 === urls.length
+            ? '双镜像已写入，正在确认原模式...'
+            : '第一阶段完成，正在连接另一个子镜像...',
+        });
+        activeTransport = await options.waitForReconnect(updatesBle ? 0 : 1);
+      }
+    }
   } catch (err) {
     const formatted = formatIapError(err);
     onProgress({

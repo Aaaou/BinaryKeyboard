@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "BinaryKeyboard"
   text: "开源迷你宏键盘"
-  tagline: CH552G 有线版与 CH592F USB / BLE 双模版
+  tagline: CH552G 有线版与 CH592F USB / BLE / 2.4G 三模版
   image:
     src: /logo.svg
     alt: BinaryKeyboard Logo
@@ -30,8 +30,8 @@ features:
     title: Web 改键工具
     details: 在 Chromium 浏览器中通过 WebHID 配置键位、层、RGB 和宏。
   - icon: 📡
-    title: 两种连接方式
-    details: 经典版使用 USB；无线版可在 USB 与 BLE 间切换。
+    title: 三模连接
+    details: 经典版使用 USB；无线版可在 USB、BLE 与 2.4G 间切换。
   - icon: 💡
     title: RGB 灯效
     details: 支持静态、呼吸、闪烁、彩虹、状态和层切换提示。

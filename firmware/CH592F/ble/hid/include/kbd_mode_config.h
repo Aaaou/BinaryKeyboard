@@ -56,6 +56,15 @@ extern "C"
 #define KBD_RADIO_2G4_ENABLED 0
 #endif
 
+#ifndef KBD_TRIMODE_ENABLED
+#define KBD_TRIMODE_ENABLED 0
+#endif
+
+/* 0 = USB/BLE application, 1 = 2.4G application. */
+#ifndef KBD_TRIMODE_IMAGE
+#define KBD_TRIMODE_IMAGE 0
+#endif
+
 #ifndef KBD_RECEIVER_BUILD
 #define KBD_RECEIVER_BUILD 0
 #endif

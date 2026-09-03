@@ -757,6 +757,15 @@ static void ExecuteFnAction(kbd_fn_action_t action, uint8_t param)
         break;
 
     case KBD_FN_BLE_CLEAR_BONDS:
+    case KBD_FN_2G4_PAIR:
+        if (KBD_Mode_Get() == KBD_WORK_MODE_2G4)
+        {
+            LOG_I(TAG, "FN: 2.4G pair (mode-aware maintenance action)");
+            ret = KBD_Radio2G4_StartPairing();
+            if (ret == 0) KBD_RGB_Flash(0, 120, 255, 300);
+            else KBD_RGB_Flash(255, 0, 0, 300);
+            break;
+        }
         if (KBD_Mode_Get() != KBD_WORK_MODE_BLE)
         {
             /* 非 BLE 模式：按用户要求静默忽略 */
@@ -839,10 +848,6 @@ static void ExecuteFnAction(kbd_fn_action_t action, uint8_t param)
     case KBD_FN_BOOTLOADER:
         LOG_W(TAG, "FN: enter IAP");
         Hal_JumpToBootloader();
-        break;
-
-    case KBD_FN_2G4_PAIR:
-        if (KBD_Radio2G4_StartPairing() != 0) KBD_RGB_Flash(255, 0, 0, 200);
         break;
 
     /* 宏 */

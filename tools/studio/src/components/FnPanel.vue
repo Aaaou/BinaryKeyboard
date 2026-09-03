@@ -39,7 +39,7 @@ const baseFnActionOptions = [
   { value: FnAction.MODE_TOGGLE, label: '切换模式' },
   { value: FnAction.BLE_ADV, label: '开始蓝牙广播' },
   { value: FnAction.BLE_DISCONNECT, label: '断开蓝牙' },
-  { value: FnAction.BLE_CLEAR_BONDS, label: '清除配对' },
+  { value: FnAction.BLE_CLEAR_BONDS, label: '维护当前无线配对' },
   { value: FnAction.RGB_TOGGLE, label: 'RGB 开关' },
   { value: FnAction.RGB_MODE_NEXT, label: 'RGB 下一模式' },
   { value: FnAction.RGB_MODE_PREV, label: 'RGB 上一模式' },

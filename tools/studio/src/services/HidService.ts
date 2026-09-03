@@ -319,6 +319,36 @@ export class HidService {
       sendAndWait: (frame, options) => adapter.sendRawFrame(frame, options?.timeout),
     };
   }
+
+  async waitForIapTransport(expectedSubimage?: 0 | 1, timeoutMs = 30_000): Promise<{ sendAndWait(frame: Uint8Array, options?: { timeout?: number }): Promise<DataView> }> {
+    // IAP_ACTIVATE responds before its 200 ms reset delay. Explicitly close
+    // the old handle so the next stage cannot race the pending reset.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await this.disconnect();
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const devices = await this.getAuthorizedDevices();
+      const keyboard = devices.find((device) => device.productId === 0x2107);
+      if (keyboard && await this.connect(keyboard)) {
+        const transport = this.getIapTransport();
+        if (transport) {
+          if (expectedSubimage === undefined) return transport;
+          try {
+            const frame = new Uint8Array(64);
+            frame[0] = 0x01; // SYS_INFO
+            const info = await transport.sendAndWait(frame, { timeout: 2_000 });
+            if (info.getUint8(2) >= 18 && info.getUint8(3) === 0 &&
+                info.getUint8(20) === expectedSubimage) return transport;
+          } catch {
+            // Device may still be enumerating; close and retry below.
+          }
+          await this.disconnect();
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error('设备重启后未能重新连接');
+  }
 }
 
 export const hidService = new HidService();

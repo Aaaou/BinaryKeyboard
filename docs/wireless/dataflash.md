@@ -63,7 +63,7 @@ CH592F 提供 32KB DataFlash，偏移范围为 `0x0000`～`0x7FFF`。
 
 | 槽内偏移 | 字段 | 说明 |
 | :--- | :--- | :--- |
-| `0x100` | `default_mode` | 默认模式：0=USB，1=BLE |
+| `0x100` | `default_mode` | 历史默认模式字段：0=USB，1=BLE；三模启动以 runtime `last_mode` 为准 |
 | `0x101` | `auto_sleep_min` | LIGHT 休眠分钟数，0=禁用 |
 | `0x102` | `debounce_ms` | 按键消抖时间，默认 10ms |
 | `0x103` | `log_enabled` | HID 设备日志开关 |
@@ -134,7 +134,7 @@ runtime 区由 4 个 256B 页组成。每次写入下一个页，通过 `seq` �
 | `0x06` | 2B | `flags` | 保留 |
 | `0x08` | 4B | `seq` | 单调递增序号 |
 | `0x0C` | 1B | `current_layer` | 当前层 |
-| `0x0D` | 1B | `last_mode` | 0=USB，1=BLE，`0xFF`=未知 |
+| `0x0D` | 1B | `last_mode` | 0=USB，1=BLE，2=2.4G，`0xFF`=未知 |
 | `0x0E`～`0xFB` | 238B | `reserved` | 保留 |
 | `0xFC` | 4B | `crc32` | 对前 252B 的 CRC32 |
 

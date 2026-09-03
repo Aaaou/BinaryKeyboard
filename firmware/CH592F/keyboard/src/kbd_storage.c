@@ -225,11 +225,7 @@ static const kbd_fnkey_config_t s_default_fnkey = {
         {
             .click_action = KBD_FN_LAYER_NEXT,
             .click_param = 0,
-#if KBD_RADIO_2G4_ENABLED
-            .long_action = KBD_FN_2G4_PAIR,
-#else
             .long_action = KBD_FN_BLE_CLEAR_BONDS,
-#endif
             .long_param = 0,
             .long_press_ms = 2000,
         },
@@ -358,7 +354,7 @@ typedef struct __attribute__((packed)) {
   uint16_t flags;
   uint32_t seq;
   uint8_t current_layer;
-  uint8_t last_mode;     /**< 工作模式 (0=USB, 1=BLE, 0xFF=未知) */
+  uint8_t last_mode;     /**< 工作模式 (0=USB, 1=BLE, 2=2.4G, 0xFF=未知) */
   uint8_t reserved[238];
   uint32_t crc32;
 } kbd_runtime_page_t;
@@ -760,17 +756,9 @@ int KBD_Config_Load(void) {
   ApplyLoadedConfig(&best);
 
 #if KBD_RADIO_2G4_ENABLED
-  /* Config layout 0x0103 predates the standalone 2.4G build. Devices that
-   * already had a BLE profile stored can therefore retain FN2's old
-   * BLE_CLEAR_BONDS action, which is intentionally a no-op in 2.4G mode.
-   * Migrate that one default action in RAM and persist it once so the Studio
-   * view and the physical FN key remain consistent after an upgrade. */
-  if (s_fnkey_config.fn[1].long_action == KBD_FN_BLE_CLEAR_BONDS)
-  {
-    s_fnkey_config.fn[1].long_action = KBD_FN_2G4_PAIR;
-    (void)KBD_Config_Save();
-    LOG_I(TAG, "Migrated FN2 long action to 2.4G pairing");
-  }
+  /* In trimode builds the BLE maintenance action is interpreted according to
+   * the active image. Do not rewrite the shared configuration while in RF;
+   * otherwise switching back to BLE would permanently change FN2 semantics. */
   /* Earlier Studio builds could accidentally persist a one-layer snapshot
    * after a partial RF keymap read. Preserve all loaded key actions, but
    * restore the model's supported layer count so FN layer switching and the

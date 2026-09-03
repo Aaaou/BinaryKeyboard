@@ -29,6 +29,20 @@ set(KBD_MODEL "AUTO" CACHE STRING "Keyboard model suffix for device name (AUTO u
 set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "Override full USB/BLE device name, empty means auto compose")
 option(KBD_SLEEP_TEST_MODE "Enable visible idle/sleep timing indicators" OFF)
 option(KBD_RADIO_2G4_ENABLED "Enable validated CH592F RF FAST backend" OFF)
+set(KBD_TRIMODE_IMAGE "NONE" CACHE STRING "Trimode image: NONE, BLE, or 2G4")
+set_property(CACHE KBD_TRIMODE_IMAGE PROPERTY STRINGS NONE BLE 2G4)
+if(NOT KBD_TRIMODE_IMAGE STREQUAL "NONE")
+    set(KBD_TRIMODE_ENABLED ON CACHE BOOL "Build a fixed-address trimode application" FORCE)
+else()
+    set(KBD_TRIMODE_ENABLED OFF CACHE BOOL "Build a fixed-address trimode application")
+endif()
+if(KBD_TRIMODE_IMAGE STREQUAL "2G4")
+    set(KBD_RADIO_2G4_ENABLED ON CACHE BOOL "" FORCE)
+elseif(KBD_TRIMODE_IMAGE STREQUAL "BLE")
+    set(KBD_RADIO_2G4_ENABLED OFF CACHE BOOL "" FORCE)
+elseif(NOT KBD_TRIMODE_IMAGE STREQUAL "NONE")
+    message(FATAL_ERROR "KBD_TRIMODE_IMAGE must be NONE, BLE, or 2G4")
+endif()
 option(KBD_RECEIVER_BUILD "Build the CH592F 2.4G USB receiver" OFF)
 option(KBD_RECEIVER_USB_DIAGNOSTIC "Build receiver with USB only for hardware diagnosis" OFF)
 option(KBD_RECEIVER_MANUAL_HOST_DIAGNOSTIC "Defer receiver RF Host startup until the pairing command" OFF)
@@ -329,6 +343,14 @@ set(CH592_C_COMPILE_OPTIONS
 )
 
 target_compile_definitions(${TARGET_ELF} PRIVATE ${CH592_COMPILE_DEFINITIONS})
+if(KBD_TRIMODE_ENABLED)
+    target_compile_definitions(${TARGET_ELF} PRIVATE KBD_TRIMODE_ENABLED=1)
+    if(KBD_TRIMODE_IMAGE STREQUAL "2G4")
+        target_compile_definitions(${TARGET_ELF} PRIVATE KBD_TRIMODE_IMAGE=1)
+    else()
+        target_compile_definitions(${TARGET_ELF} PRIVATE KBD_TRIMODE_IMAGE=0)
+    endif()
+endif()
 target_compile_options(${TARGET_ELF} PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${CH592_C_COMPILE_OPTIONS}>
 )
@@ -342,6 +364,11 @@ target_link_options(${TARGET_ELF} PRIVATE
     -T${LINKER_SCRIPT}
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.map
 )
+if(KBD_TRIMODE_IMAGE STREQUAL "BLE")
+    target_link_options(${TARGET_ELF} PRIVATE -Wl,--defsym=APP_FLASH_ORIGIN=0x11000 -Wl,--defsym=APP_FLASH_LENGTH=184K)
+elseif(KBD_TRIMODE_IMAGE STREQUAL "2G4")
+    target_link_options(${TARGET_ELF} PRIVATE -Wl,--defsym=APP_FLASH_ORIGIN=0x01000 -Wl,--defsym=APP_FLASH_LENGTH=64K)
+endif()
 
 # Pre-compiled vendor libraries
 target_link_libraries(${TARGET_ELF} PRIVATE

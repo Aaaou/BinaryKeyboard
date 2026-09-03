@@ -43,6 +43,7 @@ export const useDeviceStore = defineStore("device", () => {
     wireless: false,
     iap: false,
     radio2g4: false,
+    trimode: false,
     receiverRole: false,
   };
 

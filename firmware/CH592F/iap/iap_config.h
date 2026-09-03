@@ -6,11 +6,13 @@
  * @details
  * JumpIAP / 高地址 IAP / 应用固件共用的 Flash 分区定义与 IAP 标志。
  *
- * Flash 分区布局 (448KB):
+ * 三模构建的 Flash 分区布局 (448KB):
  *   0x00000 - 0x00FFF  JumpIAP 跳板 (4KB, 仅负责 j 0x6D000)
- *   0x01000 - 0x36FFF  Image A — 运行中的应用 (216KB)
- *   0x37000 - 0x6CFFF  Image B — 暂存新固件 (216KB)
+ *   0x01000 - 0x10FFF  2.4G 应用 (64KB)
+ *   0x11000 - 0x3EFFF  USB/BLE 应用 (184KB)
+ *   0x3F000 - 0x6CFFF  Image B — 暂存单个新应用 (184KB)
  *   0x6D000 - 0x6FFFF  IAP App — 官方风格高地址 IAP 程序 (12KB)
+ * 普通单镜像构建继续使用历史 216KB Image A + 216KB Image B 布局。
  *
  * @copyright Copyright (c) 2024 MeowKJ. All rights reserved.
  */
@@ -24,24 +26,43 @@
 /*                            Flash 分区常量                                   */
 /*============================================================================*/
 
-/** Image 大小: 216KB */
-#define IMAGE_SIZE              (216u * 1024u)
+#if KBD_TRIMODE_ENABLED || KBD_TRIMODE_DISPATCHER
+/** 三模应用分区 */
+#define IMAGE_2G4_START_ADD     0x01000u
+#define IMAGE_2G4_SIZE          (64u * 1024u)
+#define IMAGE_BLE_START_ADD     0x11000u
+#define IMAGE_BLE_SIZE          (184u * 1024u)
+#define IMAGE_B_START_ADD       0x3F000u
+#define IMAGE_B_SIZE            (184u * 1024u)
+#define IMAGE_FLAG_2G4          0x30de5820u
+#define IMAGE_FLAG_BLE          0x30de5821u
+
+/* Compatibility names used by the existing IAP command implementation. */
+#define IMAGE_SIZE              IMAGE_B_SIZE
 
 /** Image A: 当前运行的应用固件 */
 #define IMAGE_A_FLAG            0x01
-#define IMAGE_A_START_ADD       0x01000u
-#define IMAGE_A_SIZE            IMAGE_SIZE
+#define IMAGE_A_START_ADD       IMAGE_2G4_START_ADD
+#define IMAGE_A_SIZE            IMAGE_2G4_SIZE
 
 /** Image B: 新固件暂存区 */
 #define IMAGE_B_FLAG            0x02
-#define IMAGE_B_START_ADD       (IMAGE_A_START_ADD + IMAGE_A_SIZE)  /* 0x37000 */
+#else
+/** 历史单应用布局，继续供普通 USB/BLE 固件和 OTA 使用。 */
+#define IMAGE_SIZE              (216u * 1024u)
+#define IMAGE_A_FLAG            0x01
+#define IMAGE_A_START_ADD       0x01000u
+#define IMAGE_A_SIZE            IMAGE_SIZE
+#define IMAGE_B_FLAG            0x02
+#define IMAGE_B_START_ADD       (IMAGE_A_START_ADD + IMAGE_A_SIZE)
 #define IMAGE_B_SIZE            IMAGE_SIZE
+#endif
 
 /** IAP 标志: 置此标志后重启，高地址 IAP 程序会执行 B→A 拷贝 */
 #define IMAGE_IAP_FLAG          0x03
 
 /** 高地址 IAP 程序区域 */
-#define IMAGE_IAP_START_ADD     (IMAGE_B_START_ADD + IMAGE_B_SIZE)  /* 0x6D000 */
+#define IMAGE_IAP_START_ADD     0x6D000u
 #define IMAGE_IAP_SIZE          (12u * 1024u)
 
 /*============================================================================*/

@@ -71,6 +71,21 @@ describe('CH592 receiver system status', () => {
   });
 });
 
+describe('CH592 trimode discovery', () => {
+  it('reads the trimode capability from the reserved SYS_INFO extension', () => {
+    const codec = new Ch592Codec();
+    const bytes = new Uint8Array(64);
+    bytes[2] = 18;
+    bytes[3] = 0;
+    bytes[17] = 1; // payload[14]: 2.4G capable
+    bytes[19] = 1; // payload[16]: trimode
+    const info = codec.parseSysInfo(new DataView(bytes.buffer));
+    expect(info.capabilities.radio2g4).toBe(true);
+    expect(info.capabilities.trimode).toBe(true);
+    expect(info.capabilities.receiverRole).toBe(false);
+  });
+});
+
 describe('CH592 keymap response safety', () => {
   it('decodes all eight actions without shifting the response header', () => {
     const codec = new Ch592Codec();

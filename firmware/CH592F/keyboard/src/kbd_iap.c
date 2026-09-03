@@ -4,7 +4,8 @@
  * @author  MeowKJ
  *
  * @details
- * 实现通过 HID 通道接收固件，写入 Image B，校验后触发更新。
+ * 实现通过 HID 通道接收固件，写入统一暂存区，校验后由 IAP 按镜像标识
+ * 复制到 2.4G 或 USB/BLE 固定区域。命令帧保持兼容。
  *
  * 写入协议:
  *   帧格式: [0x82][seq_hi][len][offset_hi, offset_lo, data × 56]
@@ -356,6 +357,19 @@ static void HandleIapVerify(const kbd_cmd_frame_t *frame)
         KBD_Command_SendResponse(KBD_CMD_IAP_VERIFY, 0, resp, 5);
         return;
     }
+
+#if KBD_TRIMODE_ENABLED
+    uint32_t marker = *(const uint32_t *)(IMAGE_B_START_ADD + 4u);
+    if ((marker != IMAGE_FLAG_2G4 && marker != IMAGE_FLAG_BLE) ||
+        (marker == IMAGE_FLAG_2G4 && fw_size > IMAGE_2G4_SIZE) ||
+        (marker == IMAGE_FLAG_BLE && fw_size > IMAGE_BLE_SIZE))
+    {
+        resp[0] = KBD_RESP_ERR_PARAM;
+        memset(&resp[1], 0, 4);
+        KBD_Command_SendResponse(KBD_CMD_IAP_VERIFY, 0, resp, 5);
+        return;
+    }
+#endif
 
     LOG_I(TAG, "Verify: size=%d expected_crc=0x%08X", fw_size, expected_crc);
 

@@ -156,7 +156,7 @@ const FN_ACTION_NAMES: Record<number, string> = {
   [FnAction.MODE_TOGGLE]: "切换模式",
   [FnAction.BLE_ADV]: "蓝牙广播",
   [FnAction.BLE_DISCONNECT]: "蓝牙断开",
-  [FnAction.BLE_CLEAR_BONDS]: "清除配对",
+  [FnAction.BLE_CLEAR_BONDS]: "维护当前无线配对",
   [FnAction.RGB_TOGGLE]: "RGB 开关",
   [FnAction.RGB_MODE_NEXT]: "RGB 下一模式",
   [FnAction.RGB_MODE_PREV]: "RGB 上一模式",
@@ -741,8 +741,9 @@ export function parseLogFrame(frame: Uint8Array): {
 
     case LogCategory.MODE_EVENT:
       if (len >= 2) {
-        const oldMode = data[0] === 0 ? "USB" : "BLE";
-        const newMode = data[1] === 0 ? "USB" : "BLE";
+        const modeName = (mode: number) => mode === 0 ? "USB" : mode === 1 ? "BLE" : mode === 2 ? "2.4G" : `未知(${mode})`;
+        const oldMode = modeName(data[0]);
+        const newMode = modeName(data[1]);
         parsed += ` | ${oldMode} → ${newMode}`;
       }
       break;

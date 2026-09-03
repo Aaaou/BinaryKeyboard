@@ -117,6 +117,7 @@ eeprom_dump.bin
 # CH592F receiver uses a separate immutable JumpIAP cache so it cannot reuse
 # the keyboard JumpIAP target during full-image generation.
 firmware/CH592F/jump_iap/build-receiver-immutable/
+firmware/CH592F/bootloader/build-trimode/
 
 # Windows reserved name (accidental create)
 nul

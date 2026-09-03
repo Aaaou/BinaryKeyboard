@@ -236,7 +236,7 @@ firmware/CH592F/
 
 | 文件                | 功能                           |
 | :------------------ | :----------------------------- |
-| `kbd_mode.c`        | USB / BLE 模式切换、连接状态与低功耗管理 |
+| `kbd_mode.c`        | USB / BLE / 2.4G 模式切换、连接状态与低功耗管理 |
 | `ble_hid.c`         | 蓝牙 HID 报告发送              |
 | `ble_hid_service.c` | HID GATT 服务实现              |
 
@@ -926,6 +926,7 @@ Studio 负责读取、校验和压缩重写整个宏区。协议字段见 [HID �
 |----|------|------|
 | 0 | USB | USB 有线模式 |
 | 1 | BLE | 蓝牙无线模式 |
+| 2 | 2.4G | RF FAST 接收器模式 |
 
 ### 模式管理
 
@@ -959,7 +960,9 @@ KBD_Mode_BLE_ClearBonds();
 
 ### 2.4G
 
-当前固件只实现 USB 和 BLE。`kbd_mode_config.h` 中保留的 2.4G 注释不构成可用功能，也没有接收器协议、配对流程或发布产物。
+三模构建使用 USB/BLE 与 2.4G 两个固定地址应用镜像，由高地址 Dispatcher 读取
+runtime `last_mode` 选择启动。两套 WCH 库不链接进同一个 ELF，接收器协议和已验证
+的 RF 管理状态机保持不变。详见[三模架构](./trimode.md)与[配码及透传](./2.4g-pairing.md)。
 
 ### 发送 HID 报告
 

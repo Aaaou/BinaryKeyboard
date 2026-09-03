@@ -371,6 +371,10 @@ def release_artifact_manifest(build_number: int | None = None) -> tuple[dict[str
             "version": version,
             "appBinUrl": f"{base_url}/firmware/ch592f/CH592F-{model}-{version}-app.bin",
             "fullBinUrl": f"{base_url}/firmware/ch592f/CH592F-{model}-{version}-full.bin",
+            "trimodeFullBinUrl": f"{base_url}/firmware/ch592f/CH592F-2G4-{model}-TRIMODE-full.bin",
+            "trimodeFullHexUrl": f"{base_url}/firmware/ch592f/CH592F-2G4-{model}-TRIMODE-full.hex",
+            "bleAppBinUrl": f"{base_url}/firmware/ch592f/CH592F-2G4-{model}-TRIMODE-ble-app.bin",
+            "radio2g4AppBinUrl": f"{base_url}/firmware/ch592f/CH592F-2G4-{model}-TRIMODE-radio-app.bin",
         }
 
     def ch552_asset(model: str) -> dict[str, str]:
