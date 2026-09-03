@@ -22,6 +22,12 @@ export interface BatteryInfo {
   chargePinRaw?: number;
 }
 
+export interface LayerState {
+  currentLayer: number;
+  numLayers: number;
+  defaultLayer: number;
+}
+
 export interface HidDeviceEvent {
   protocol: DeviceProtocol;
   frame: Uint8Array;
@@ -31,6 +37,9 @@ export interface HidDeviceEvent {
 export type HidDeviceEventHandler = (event: HidDeviceEvent) => void;
 
 export interface HidOptionalOperations {
+  getRemoteDeviceInfo?: () => Promise<DeviceInfo>;
+  getLayerState?: () => Promise<LayerState>;
+  setLayerState?: (layer: number) => Promise<LayerState>;
   getRgbConfig?: () => Promise<RgbConfig>;
   setRgbConfig?: (config: RgbConfig) => Promise<void>;
   getFnKeyConfig?: () => Promise<FnKeyConfig>;
@@ -97,9 +106,27 @@ export interface PairStatus {
   lastReleaseQueuedAgeMs?: number | null;
   lastReleaseSentAgeMs?: number | null;
   releaseBusyCount?: number;
+  managementFlags?: number;
+  managementTransaction?: number;
+  managementCommand?: number;
+  managementTxFragment?: number;
+  managementTxFragments?: number;
+  managementRxFragment?: number;
+  managementRxFragments?: number;
+  managementRxCount?: number;
+  managementExecCount?: number;
+  managementResponseTxCount?: number;
+  rfValidFrameCount?: number;
+  keyboardRfReportCount?: number;
+  keyboardUsbSubmitCount?: number;
+  keyboardUsbBusyCount?: number;
+  rxQuarantined?: boolean;
 }
 
 export const OPTIONAL_OPERATION_LABELS: Record<keyof HidOptionalOperations, string> = {
+  getRemoteDeviceInfo: '远端键盘能力读取',
+  getLayerState: '当前层读取',
+  setLayerState: '当前层切换',
   getRgbConfig: 'RGB 配置读取',
   setRgbConfig: 'RGB 配置写入',
   getFnKeyConfig: 'FN 键配置读取',

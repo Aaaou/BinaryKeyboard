@@ -411,7 +411,7 @@ extern "C"
     uint8_t auto_sleep_min;  /**< LIGHT 休眠时间 (分钟, 0=禁用) */
     uint8_t debounce_ms;     /**< 按键消抖时间 (毫秒) */
     /* HID 日志配置 (v1.2+) */
-    uint8_t log_enabled;     /**< HID 日志开关 (0=关, 非0=开, 默认1) */
+    uint8_t log_enabled;     /**< HID 日志开关 (0=关, 非0=开, 默认由构建配置决定) */
     uint8_t deep_sleep_min;  /**< DEEP 延时 (在 LIGHT 后, 分钟, 0=禁用) */
     uint8_t os_mode;         /**< 系统模式 (0=Win, 1=Mac) */
     uint8_t seamless_wake;   /**< 唤醒首键透传，使用 KBD_SEAMLESS_WAKE_* 标记 */
@@ -464,6 +464,7 @@ extern "C"
     KBD_CMD_RADIO_PAIR_CLEAR = 0x07,
     KBD_CMD_RADIO_POLL_RATE_GET = 0x08,
     KBD_CMD_RADIO_POLL_RATE_SET = 0x09,
+    KBD_CMD_RADIO_REMOTE_CAPS = 0x0A, /**< 获取已连接远端键盘能力 */
 
     /* 配置管理 0x10-0x1F */
     KBD_CMD_CFG_SAVE = 0x10,  /**< 保存配置到 Flash */
@@ -528,6 +529,10 @@ extern "C"
     KBD_LOG_SYS_BOOT = 0x01,   /**< 设备启动 */
     KBD_LOG_SYS_SLEEP = 0x02,  /**< 进入休眠 */
     KBD_LOG_SYS_WAKEUP = 0x03, /**< 唤醒 */
+    KBD_LOG_SYS_RF_MGMT_RX = 0x10,
+    KBD_LOG_SYS_RF_MGMT_EXEC = 0x11,
+    KBD_LOG_SYS_RF_MGMT_TX = 0x12,
+    KBD_LOG_SYS_RF_MGMT_DROP = 0x13,
   } kbd_log_sys_event_t;
 
   /**

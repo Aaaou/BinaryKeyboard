@@ -23,6 +23,12 @@ export const REPORT_ID_RESPONSE = 0; // 键盘 → 主机 (Input Report, 无 Rep
 
 export const FRAME_SIZE = 64; // 帧大小
 
+/** RF application frame types shared with kbd_radio_protocol.h. */
+export const RADIO_FRAME_MGMT_REQUEST = 11;
+export const RADIO_FRAME_MGMT_RESPONSE = 12;
+export const RADIO_FRAME_CAPABILITY = 13;
+export const RADIO_FRAME_MGMT_ACK = 14;
+
 export const CH552_REPORT_ID_COMMAND = 0x04;
 export const CH552_REPORT_ID_RESPONSE = 0x05;
 export const CH552_FRAME_SIZE = 31;
@@ -131,6 +137,7 @@ export enum Command {
   RADIO_PAIR_CLEAR = 0x07,
   RADIO_POLL_RATE_GET = 0x08,
   RADIO_POLL_RATE_SET = 0x09,
+  RADIO_REMOTE_CAPS = 0x0A,
 
   // 配置管理 0x10-0x1F
   CFG_SAVE = 0x10,
@@ -198,6 +205,10 @@ export enum SystemLogEvent {
   BOOT = 0x01,
   SLEEP = 0x02,
   WAKEUP = 0x03,
+  RF_MGMT_RX = 0x10,
+  RF_MGMT_EXEC = 0x11,
+  RF_MGMT_TX = 0x12,
+  RF_MGMT_DROP = 0x13,
 }
 
 // ============================================================================
@@ -658,7 +669,10 @@ export function createEmptyFnKeyConfig(): FnKeyConfig {
 export function createDefaultRgbConfig(): RgbConfig {
   return {
     enabled: true,
-    mode: RgbMode.RAINBOW,
+    // Match the firmware's factory configuration. This value is only a
+    // placeholder before RGB_GET succeeds, but keeping it aligned prevents a
+    // failed initial read from displaying a visibly false rainbow state.
+    mode: RgbMode.INDICATOR,
     brightness: RGB_DEFAULT_BRIGHTNESS,
     speed: 128,
     colorR: 255,

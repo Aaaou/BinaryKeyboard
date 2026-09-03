@@ -282,7 +282,14 @@ async function assertMacrosFitCurrentDevice(macros: ConfigBackupMacroEntry[]): P
 
 export async function createConfigBackupFromDevice(name: string): Promise<ConfigBackupFile> {
   const deviceStore = useDeviceStore();
-  const info = await hidService.getSysInfo();
+  let info = await hidService.getSysInfo();
+  if (info.capabilities.receiverRole) {
+    const pair = await hidService.getPairStatus().catch(() => null);
+    if (!pair || (pair.state !== 'connected' && !pair.hasPeer)) {
+      throw new Error('接收器当前没有已连接的 2.4G 键盘，无法备份远端配置');
+    }
+    info = await hidService.getRemoteDeviceInfo();
+  }
   const keymap = await hidService.getFullKeymap();
   const config: ConfigBackupFile['config'] = {
     keymap: cloneJson(keymap),
@@ -417,7 +424,14 @@ export async function applyConfigBackupToDevice(backup: ConfigBackupFile): Promi
     throw new Error(compatibility.blocking.join('；'));
   }
 
-  const info = await hidService.getSysInfo();
+  let info = await hidService.getSysInfo();
+  if (info.capabilities.receiverRole) {
+    const pair = await hidService.getPairStatus().catch(() => null);
+    if (!pair || (pair.state !== 'connected' && !pair.hasPeer)) {
+      throw new Error('接收器当前没有已连接的 2.4G 键盘，无法恢复远端配置');
+    }
+    info = await hidService.getRemoteDeviceInfo();
+  }
   if (backup.config.macros && info.capabilities.macroActions) {
     await assertMacrosFitCurrentDevice(backup.config.macros);
   }
@@ -449,7 +463,27 @@ export async function applyConfigBackupToDevice(backup: ConfigBackupFile): Promi
   const deviceStore = useDeviceStore();
   const macroStore = useMacroStore();
   await deviceStore.refreshDeviceInfo();
-  if (!deviceStore.capabilities.receiverRole) {
+  // refreshDeviceInfo() reads the receiver's own descriptor. For a paired
+  // receiver, restore the remote keyboard descriptor before deciding which
+  // configuration sections to refresh; otherwise a successful restore would
+  // immediately hide the keyboard editor and report all remote capabilities
+  // as disabled.
+  if (deviceStore.capabilities.receiverRole) {
+    const pair = await hidService.getPairStatus().catch(() => null);
+    if (pair && (pair.state === 'connected' || pair.hasPeer)) {
+      try {
+        deviceStore.remoteDeviceInfo = await hidService.getRemoteDeviceInfo();
+        deviceStore.remoteTargetLoaded = true;
+        deviceStore.remoteLayoutKnown = true;
+      } catch {
+        /* Older keyboards may not implement optional 0x0A. Keep the target
+         * eligible for the already-proven keymap tunnel in generic mode. */
+        deviceStore.remoteTargetLoaded = true;
+        deviceStore.remoteLayoutKnown = false;
+      }
+    }
+  }
+  if (!deviceStore.capabilities.receiverRole || deviceStore.remoteTargetLoaded) {
     await deviceStore.refreshKeymap();
   }
   if (deviceStore.supportsRgb) await deviceStore.refreshRgbConfig();

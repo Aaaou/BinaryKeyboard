@@ -6,10 +6,10 @@
     </h3>
     <div class="rgb-config">
       <div class="rgb-item">
-        <span class="rgb-label">RGB 开关</span>
+        <span class="rgb-label">按键灯开关</span>
         <label class="rgb-switch">
           <input type="checkbox" v-model="deviceStore.rgbConfig.enabled" @change="autoSaveRgb" />
-          <span>{{ deviceStore.rgbConfig.enabled ? '开启' : '关闭' }}</span>
+          <span>{{ deviceStore.rgbConfig.enabled ? '开启' : '关闭（指示灯保持）' }}</span>
         </label>
       </div>
 

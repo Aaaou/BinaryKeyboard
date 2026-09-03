@@ -112,6 +112,12 @@ int KBD_Command_Process(const kbd_cmd_frame_t *frame)
   case KBD_CMD_RADIO_POLL_RATE_SET:
     HandleRadioPairAction(frame);
     break;
+  case KBD_CMD_RADIO_REMOTE_CAPS:
+    /* The receiver uses this command to obtain the paired keyboard's
+     * self-described capabilities without confusing its own SYS_INFO with a
+     * configurable keyboard target. */
+    HandleSysInfo(frame);
+    break;
 
   /* 配置管理 */
   case KBD_CMD_CFG_SAVE:
@@ -236,7 +242,11 @@ void KBD_Command_SendResponse(uint8_t cmd, uint8_t sub, const uint8_t *data,
 
   if (s_response_sender)
   {
-    s_response_sender(frame, sizeof(frame));
+    /* The RF management tunnel must see the actual command length. Sending
+     * the padded 64-byte HID buffer would create phantom fragments and make
+     * the receiver wait for data that does not exist. USB still receives the
+     * fixed-size report through USB_Config_SendResponse below. */
+    s_response_sender(frame, (uint8_t)(copy_len + 3u));
     return;
   }
 
@@ -293,7 +303,10 @@ static void HandleSysInfo(const kbd_cmd_frame_t *frame)
   resp[16] = 0;
   resp[17] = 0;
 
-  KBD_Command_SendResponse(KBD_CMD_SYS_INFO, 0, resp, 18);
+  KBD_Command_SendResponse(frame->cmd == KBD_CMD_RADIO_REMOTE_CAPS
+                               ? KBD_CMD_RADIO_REMOTE_CAPS
+                               : KBD_CMD_SYS_INFO,
+                           0, resp, 18);
   LOG_D(TAG, "SysInfo sent: type=%d keys=%d", resp[11], resp[12]);
 }
 
@@ -334,7 +347,7 @@ static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame)
   uint8_t local[6], peer[6];
   uint32_t fp = KBD_Radio2G4_GetPairFingerprint();
   uint32_t session = KBD_Radio2G4_GetSession();
-  uint8_t resp[48] = {KBD_RESP_OK, (uint8_t)KBD_Radio2G4_GetPairState(),
+  uint8_t resp[61] = {KBD_RESP_OK, (uint8_t)KBD_Radio2G4_GetPairState(),
                       0, KBD_Radio2G4_GetDeviceId(), 0};
   KBD_Radio2G4_GetLocalId(local);
   KBD_Radio2G4_GetPeerId(peer);
@@ -354,6 +367,7 @@ static void HandleRadioPairStatus(const kbd_cmd_frame_t *frame)
   v = KBD_Radio2G4_GetTxFinished(); memcpy(&resp[39], &v, 4);
   v = KBD_Radio2G4_GetLastTxAge(); memcpy(&resp[43], &v, 4);
   resp[47] = KBD_Radio2G4_GetTxDescriptorsBusy();
+  KBD_Radio2G4_GetManagementDiagnostics(&resp[48]);
   (void)frame;
   KBD_Command_SendResponse(KBD_CMD_RADIO_PAIR_STATUS, 0, resp, sizeof(resp));
 }
@@ -788,6 +802,7 @@ static void HandleFnkeySet(const kbd_cmd_frame_t *frame)
 static void HandleBattery(const kbd_cmd_frame_t *frame)
 {
   uint8_t resp[8];
+  KBD_Battery_EnsureSample();
   uint16_t mv = KBD_Battery_GetVoltage_mV();
   uint16_t adc_raw = KBD_Battery_GetAdcRaw();
   uint8_t charge_pin_raw = KBD_Battery_GetChargePinRaw();

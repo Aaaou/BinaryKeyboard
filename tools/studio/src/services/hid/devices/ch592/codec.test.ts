@@ -49,8 +49,13 @@ describe('CH592 seamless wake RGB protocol extension', () => {
 });
 
 describe('CH592 receiver system status', () => {
-  it('decodes the startup stage from SYS_STATUS before SYS_INFO is read', () => {
+  it('decodes the startup stage after SYS_INFO identifies a receiver', () => {
     const codec = new Ch592Codec();
+    const info = new Uint8Array(64);
+    info[2] = 18;
+    info[3] = 0;
+    info[18] = 1;
+    codec.parseSysInfo(new DataView(info.buffer));
     const bytes = new Uint8Array(64);
     // Command, sub, payload length, OK, work mode, link state, layer,
     // battery, charging, receiver startup stage, reserved, reserved.
@@ -63,5 +68,26 @@ describe('CH592 receiver system status', () => {
     expect(status.receiverHostStartupState).toBe(0);
     expect(status.receiverHostStartupResult).toBe(0);
     expect(status.adcRaw).toBeUndefined();
+  });
+});
+
+describe('CH592 keymap response safety', () => {
+  it('decodes all eight actions without shifting the response header', () => {
+    const codec = new Ch592Codec();
+    const bytes = new Uint8Array(64);
+    bytes.set([0x20, 0x00, 0x24, 0x00, 0x05, 0x00, 0x00], 0);
+    // K1 = keyboard A, K2 = layer toggle to layer 2, remaining actions kept.
+    bytes.set([0x01, 0x00, 0x04, 0x00], 7);
+    bytes.set([0x06, 0x01, 0x01, 0x00], 11);
+    const parsed = codec.parseKeymap(new DataView(bytes.buffer));
+    expect(parsed.numLayers).toBe(5);
+    expect(parsed.layer.keys[0]).toEqual({ type: 1, modifier: 0, param1: 4, param2: 0 });
+    expect(parsed.layer.keys[1]).toEqual({ type: 6, modifier: 1, param1: 1, param2: 0 });
+  });
+
+  it('rejects a short response instead of creating an empty keymap', () => {
+    const codec = new Ch592Codec();
+    const bytes = new Uint8Array([0x20, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00]);
+    expect(() => codec.parseKeymap(new DataView(bytes.buffer))).toThrow(/返回长度错误/);
   });
 });

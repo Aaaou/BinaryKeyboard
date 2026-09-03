@@ -21,7 +21,8 @@
  * - 单次采样去掉极值，周期结果采用低通滤波，并复核异常大跳变
  * - 电量按单节 LiPo 电压曲线估算；充电时补偿端电压抬升且不直接报 100%
  * - 高压区经连续采样确认后锁定 100%，并通过回差避免满电百分比抖动
- * - CHRG 稳定状态采用非对称滤波，避免充电末段补充充电造成状态灯跳变
+ * - 充电状态对外按 CHRG 瞬时电平报告，与 BLE/有线终端保持一致；内部
+ *   仍保留非对称滤波用于电量曲线和指示灯稳定
  * - 满电锁定后将短暂补充充电脉冲视为维护充电，不重新切换状态灯
  * - 读取接口返回最近一次缓存值
  * - 查询时会在后台补发刷新请求，不阻塞主循环
@@ -61,6 +62,8 @@ void KBD_Battery_Init(void);
  * @note 非阻塞；若已有采样在途则忽略
  */
 void KBD_Battery_RequestRefresh(void);
+/** Force one fresh sample before returning a management response. */
+void KBD_Battery_EnsureSample(void);
 
 /**
  * @brief 获取电池电量百分比
@@ -81,8 +84,8 @@ uint16_t KBD_Battery_GetVoltage_mV(void);
 uint16_t KBD_Battery_GetAdcRaw(void);
 
 /**
- * @brief 获取滤波后的充电状态
- * @note 进入充电约延迟 300ms，退出充电约延迟 10s
+ * @brief 获取当前充电状态
+ * @note 0=未充电, 1=充电中；状态直接来自 CHRG 引脚，避免远端查询读到旧缓存
  * @return kbd_charge_state_t
  */
 kbd_charge_state_t KBD_Battery_GetChargeState(void);

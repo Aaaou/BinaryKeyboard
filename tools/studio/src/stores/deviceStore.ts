@@ -18,10 +18,12 @@ import {
   OsMode,
   type OsModeConfig,
   KeyboardTypeInfo,
+  KeyboardType,
   createEmptyKeymap,
   createEmptyFnKeyConfig,
   createDefaultRgbConfig,
   MAX_LAYERS,
+  MAX_KEYS,
 } from "@/types/protocol";
 
 export const useDeviceStore = defineStore("device", () => {
@@ -53,6 +55,7 @@ export const useDeviceStore = defineStore("device", () => {
 
   /** 设备信息 */
   const deviceInfo = ref<DeviceInfo | null>(null);
+  const remoteDeviceInfo = ref<DeviceInfo | null>(null);
 
   /** 设备状态 */
   const deviceStatus = ref<DeviceStatus | null>(null);
@@ -75,6 +78,14 @@ export const useDeviceStore = defineStore("device", () => {
   /** 当前编辑的层索引 */
   const currentEditLayer = ref(0);
 
+  /** KEYMAP_GET 是否成功完成。失败时绝不允许把占位空配置写回设备。 */
+  const keymapLoaded = ref(false);
+  /** 接收器已成功识别远端键盘能力。与单项配置读取状态分离。 */
+  const remoteTargetLoaded = ref(false);
+  const remoteLayoutKnown = ref(false);
+  /** 用户明确改动过的键，保存前用于与设备最新配置合并。 */
+  const dirtyKeyActions = new Map<string, KeyAction>();
+
   /** 电池电压 (V, 如 4.12) */
   const batteryVoltage = ref(0);
 
@@ -84,11 +95,15 @@ export const useDeviceStore = defineStore("device", () => {
   /** 加载状态 */
   const isLoading = ref(false);
 
+  /** 接收器后面存在可编辑的已连接远端键盘。 */
+  const remoteTargetReady = ref(false);
+
   /** 错误信息 */
   const errorMessage = ref<string | null>(null);
 
   /** 实时轮询定时器 */
   let _pollTimer: ReturnType<typeof setInterval> | null = null;
+  let _pollInFlight = false;
   /** 轮询周期计数 (用于电压低频采样) */
   let _pollTick = 0;
 
@@ -96,11 +111,21 @@ export const useDeviceStore = defineStore("device", () => {
     return JSON.parse(JSON.stringify(config)) as KeymapConfig;
   }
 
+  function countMappedActions(config: KeymapConfig): number {
+    return config.layers
+      .slice(0, config.numLayers)
+      .reduce(
+        (total, layer) =>
+          total + layer.keys.filter((action) => action?.type !== 0).length,
+        0,
+      );
+  }
+
   function normalizeKeymapConfig(config: KeymapConfig): KeymapConfig {
     const normalized = cloneKeymapConfig(config);
     const info = deviceInfo.value;
 
-    if (!info?.capabilities.multiLayer) {
+    if (!info?.capabilities.multiLayer && !remoteTargetLoaded.value) {
       normalized.numLayers = 1;
       normalized.currentLayer = 0;
       normalized.defaultLayer = 0;
@@ -109,8 +134,9 @@ export const useDeviceStore = defineStore("device", () => {
 
     const supportedLayers = Math.max(
       1,
-      info.maxLayers ||
-        KeyboardTypeInfo[info.keyboardType]?.layers ||
+        (remoteTargetLoaded.value ? MAX_LAYERS : 0) ||
+        info?.maxLayers ||
+        (info ? KeyboardTypeInfo[info.keyboardType]?.layers : 0) ||
         normalized.numLayers ||
         1,
     );
@@ -140,7 +166,21 @@ export const useDeviceStore = defineStore("device", () => {
 
   /** 当前设备能力 */
   const capabilities = computed<DeviceCapabilities>(() => {
-    return deviceInfo.value?.capabilities ?? EMPTY_CAPABILITIES;
+    const base = deviceInfo.value?.capabilities ?? EMPTY_CAPABILITIES;
+    if (!remoteTargetReady.value || !base.receiverRole) return base;
+    return {
+      ...base,
+      multiLayer: true,
+      layerKeyActions: true,
+      rgb: true,
+      rgbOverlay: true,
+      fnKeys: true,
+      osMode: true,
+      macroActions: true,
+      battery: true,
+      explicitSave: true,
+      receiverRole: true,
+    };
   });
 
   const supportsMultiLayer = computed(() => capabilities.value.multiLayer);
@@ -165,12 +205,21 @@ export const useDeviceStore = defineStore("device", () => {
   /** 键盘类型名称 */
   const keyboardTypeName = computed(() => {
     if (!deviceInfo.value) return "未知设备";
+    if (remoteTargetLoaded.value && remoteDeviceInfo.value) {
+      return KeyboardTypeInfo[remoteDeviceInfo.value.keyboardType]?.name || "远端键盘";
+    }
+    if (remoteTargetLoaded.value && !remoteLayoutKnown.value) return "远端键盘";
     return KeyboardTypeInfo[deviceInfo.value.keyboardType]?.name || "未知型号";
   });
 
   /** 实际可用键数 */
   const actualKeyCount = computed(() => {
     if (!deviceInfo.value) return 4;
+    if (remoteTargetLoaded.value && remoteDeviceInfo.value) return remoteDeviceInfo.value.actualKeyCount;
+    if (remoteTargetLoaded.value && !remoteLayoutKnown.value) {
+      const remoteSlots = keymap.value.layers[0]?.keys.length || 0;
+      return remoteSlots || MAX_KEYS;
+    }
     return deviceInfo.value.actualKeyCount;
   });
 
@@ -212,6 +261,12 @@ export const useDeviceStore = defineStore("device", () => {
     );
   });
 
+  // Keep the button actionable when the user has made an edit. saveKeymap()
+  // still refuses all writes until an authoritative KEYMAP_GET succeeds, but
+  // an actionable button can explain that condition instead of silently
+  // appearing broken.
+  const canSaveKeymap = computed(() => hasChanges.value);
+
   /** 设备信息列表 (用于 UI 显示) */
   const deviceInfoList = computed(() => {
     if (!deviceInfo.value) return [];
@@ -248,14 +303,20 @@ export const useDeviceStore = defineStore("device", () => {
   function resetDeviceSession(): void {
     device.value = null;
     deviceInfo.value = null;
+    remoteDeviceInfo.value = null;
     deviceStatus.value = null;
     batteryVoltage.value = 0;
     keymap.value = createEmptyKeymap();
     keymapOriginal.value = createEmptyKeymap();
+    keymapLoaded.value = false;
+    remoteTargetLoaded.value = false;
+    remoteLayoutKnown.value = false;
+    dirtyKeyActions.clear();
     rgbConfig.value = createDefaultRgbConfig();
     fnKeyConfig.value = createEmptyFnKeyConfig();
     osModeConfig.value = { mode: OsMode.WIN };
     currentEditLayer.value = 0;
+    remoteTargetReady.value = false;
     useMacroStore().reset();
   }
 
@@ -299,29 +360,122 @@ export const useDeviceStore = defineStore("device", () => {
       await refreshDeviceInfo();
       if (capabilities.value.receiverRole) {
         await readReceiverBootDiagnostics();
+        const pair = await hidService.getPairStatus();
+        remoteTargetReady.value = pair.state === 'connected' || pair.linkConfirmed === true;
+        if (remoteTargetReady.value && deviceInfo.value) {
+          try {
+            remoteDeviceInfo.value = await hidService.getRemoteDeviceInfo();
+            remoteTargetLoaded.value = true;
+            remoteLayoutKnown.value = true;
+          } catch {
+            remoteTargetLoaded.value = false;
+            remoteLayoutKnown.value = false;
+            remoteTargetReady.value = false;
+            // Do not optimistically enable keyboard panels or issue
+            // KEYMAP/RGB/FN reads after the management tunnel timed out.
+            // RFBound may still report CONNECTED while the application
+            // management channel is unavailable.
+            if (deviceInfo.value) {
+              deviceInfo.value = {
+                ...deviceInfo.value,
+                capabilities: {
+                  ...deviceInfo.value.capabilities,
+                  multiLayer: false, layerKeyActions: false, rgb: false,
+                  rgbOverlay: false, fnKeys: false, osMode: false,
+                  macroActions: false, battery: false, explicitSave: false,
+                },
+              };
+            }
+          }
+          if (!remoteTargetReady.value) {
+            keymap.value = createEmptyKeymap();
+            keymapOriginal.value = createEmptyKeymap();
+            rgbConfig.value = createDefaultRgbConfig();
+            fnKeyConfig.value = createEmptyFnKeyConfig();
+            osModeConfig.value = { mode: OsMode.WIN };
+            return;
+          }
+          /* Keep the USB device identified as a receiver, but expose the
+           * generic keyboard editor for its paired RF target. The target's
+           * exact model can be supplied later by a capability query. */
+          deviceInfo.value = {
+            ...deviceInfo.value,
+            capabilities: {
+              ...deviceInfo.value.capabilities,
+              multiLayer: true,
+              layerKeyActions: true,
+              rgb: true,
+              rgbOverlay: true,
+              fnKeys: true,
+              osMode: true,
+              macroActions: true,
+              battery: true,
+              explicitSave: true,
+            },
+            keyboardType: KeyboardTypeInfo[deviceInfo.value.keyboardType]
+              ? deviceInfo.value.keyboardType : KeyboardType.FIVE_KEYS,
+            actualKeyCount: deviceInfo.value.actualKeyCount || 5,
+            maxLayers: deviceInfo.value.maxLayers || MAX_LAYERS,
+          };
+
+          // Remote management is firmware-dependent. A receiver can report a
+          // connected peer before the RF management tunnel is available; in
+          // that case keep the receiver session alive and show its diagnostics
+          // instead of failing the whole USB connection.
+          try {
+            await refreshKeymap();
+            if (supportsRgb.value) await refreshRgbConfig();
+            if (supportsFnKeys.value) await refreshFnKeyConfig();
+            if (supportsOsMode.value) await refreshOsMode();
+          } catch {
+            remoteTargetReady.value = false;
+            deviceInfo.value = {
+              ...deviceInfo.value,
+              capabilities: {
+                ...deviceInfo.value.capabilities,
+                multiLayer: false,
+                layerKeyActions: false,
+                rgb: false,
+                rgbOverlay: false,
+                fnKeys: false,
+                osMode: false,
+                macroActions: false,
+                battery: false,
+                explicitSave: false,
+              },
+            };
+            keymap.value = createEmptyKeymap();
+            keymapOriginal.value = createEmptyKeymap();
+            rgbConfig.value = createDefaultRgbConfig();
+            fnKeyConfig.value = createEmptyFnKeyConfig();
+            osModeConfig.value = { mode: OsMode.WIN };
+          }
+        }
       }
       // A 2.4G receiver uses the CH592 transport but has no keymap of its own.
       // Its paired keyboard remains the place where mappings are configured.
-      if (!capabilities.value.receiverRole) {
-        await refreshKeymap();
+      if (!capabilities.value.receiverRole || remoteTargetReady.value) {
+        // Remote keymap/config reads are attempted above for paired receivers.
+        // For regular keyboards this remains the normal initialization path.
+        if (!capabilities.value.receiverRole) await refreshKeymap();
       } else {
         keymap.value = createEmptyKeymap();
         keymapOriginal.value = createEmptyKeymap();
       }
-      if (supportsRgb.value) {
-        await refreshRgbConfig();
-      } else {
+      if (!supportsRgb.value) {
         rgbConfig.value = createDefaultRgbConfig();
+      } else if (!(capabilities.value.receiverRole && remoteTargetReady.value)) {
+        await refreshRgbConfig();
       }
-      if (supportsFnKeys.value) {
-        await refreshFnKeyConfig();
-      } else {
+      if (!supportsFnKeys.value) {
         fnKeyConfig.value = createEmptyFnKeyConfig();
+      } else if (!(capabilities.value.receiverRole && remoteTargetReady.value)) {
+        await refreshFnKeyConfig();
       }
-      if (supportsOsMode.value) {
-        await refreshOsMode();
-      } else {
+      if (!supportsOsMode.value) {
         osModeConfig.value = { mode: OsMode.WIN };
+      } else if (!(capabilities.value.receiverRole && remoteTargetReady.value)) {
+        await refreshOsMode();
       }
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : "连接失败";
@@ -359,10 +513,10 @@ export const useDeviceStore = defineStore("device", () => {
     deviceStatus.value = await hidService.getSysStatus();
   }
 
-  async function readReceiverBootDiagnostics(): Promise<void> {
+  async function readReceiverBootDiagnostics(maxEntries = 1): Promise<void> {
     // LOG_GET is request/response based, so boot diagnostics remain visible
     // even when the browser subscribed after USB enumeration completed.
-    for (let index = 0; index < 16; index++) {
+    for (let index = 0; index < maxEntries; index++) {
       const entry = await hidService.getReceiverBootLog();
       if (!entry) return;
       const names: Record<number, string> = {
@@ -374,6 +528,13 @@ export const useDeviceStore = defineStore("device", () => {
         0x8c: 'RF 配码失败', 0x8d: '收到首个有效 RF 帧', 0x8e: '应用链路断开',
         0x8f: 'RF 链路超时回调', 0x90: 'HID 释放已排队',
         0x91: 'HID 释放报告已提交', 0x92: 'HID 释放 endpoint 忙',
+        0x93: '收到远端管理命令', 0x94: '远端管理请求已排队',
+        0x95: '收到远端管理响应', 0x96: '远端管理事务超时',
+        0x97: '远端管理帧/事务被拒绝',
+        0x98: '远端管理 RF DMA 已提交',
+        0x99: '收到远端管理响应首片', 0x9a: '收到远端管理响应分片',
+        0x9b: '远端管理响应完整', 0x9c: '远端管理 RF DMA 忙',
+        0x9d: '远端管理帧 CRC 错误', 0x9e: '远端管理响应分片错误',
       };
       useTerminalStore().addEntry({
         direction: 'device', level: entry.result === 0 ? 'info' : 'error',
@@ -389,15 +550,17 @@ export const useDeviceStore = defineStore("device", () => {
   async function refreshKeymap(): Promise<void> {
     // The receiver shares the CH592 vendor-HID transport but deliberately
     // has no keyboard matrix or keymap command surface.
-    if (capabilities.value.receiverRole) {
+    if (capabilities.value.receiverRole && !remoteTargetReady.value) {
       keymap.value = createEmptyKeymap();
       keymapOriginal.value = createEmptyKeymap();
       currentEditLayer.value = 0;
+      keymapLoaded.value = false;
       return;
     }
     const config = normalizeKeymapConfig(await hidService.getFullKeymap());
     keymap.value = config;
     keymapOriginal.value = cloneKeymapConfig(config);
+    keymapLoaded.value = true;
     currentEditLayer.value = config.currentLayer;
   }
 
@@ -433,11 +596,47 @@ export const useDeviceStore = defineStore("device", () => {
     errorMessage.value = null;
 
     try {
-      await hidService.setFullKeymap(keymap.value);
+      if (!keymapLoaded.value) {
+        throw new Error('按键映射尚未成功读取，已阻止保存以保护设备配置');
+      }
+
+      // Refresh the authoritative device copy immediately before writing.
+      // This protects against a stale/partial page state and preserves every
+      // key that the user did not edit in this session.
+      const latest = normalizeKeymapConfig(await hidService.getFullKeymap());
+      // A structurally valid but unexpectedly empty snapshot is the exact
+      // failure mode that previously erased a working keymap. Unless the
+      // user explicitly touched every mapped key, refuse the write and keep
+      // the device configuration intact.
+      if (
+        countMappedActions(latest) === 0 &&
+        countMappedActions(keymapOriginal.value) > 0 &&
+        dirtyKeyActions.size < countMappedActions(keymapOriginal.value)
+      ) {
+        throw new Error('设备返回了空按键映射，已阻止覆盖原配置，请重新连接后再试');
+      }
+      for (const [key, action] of dirtyKeyActions) {
+        const separator = key.indexOf(':');
+        const layer = Number(key.slice(0, separator));
+        const index = Number(key.slice(separator + 1));
+        if (latest.layers[layer] && latest.layers[layer].keys[index]) {
+          latest.layers[layer].keys[index] = { ...action };
+        }
+      }
+      // Layer count/default selection are configuration fields too. Keep the
+      // user's explicit layer-structure edits while taking all key actions
+      // from the authoritative device snapshot above.
+      latest.numLayers = keymap.value.numLayers;
+      latest.currentLayer = keymap.value.currentLayer;
+      latest.defaultLayer = keymap.value.defaultLayer;
+      keymap.value = latest;
+
+      await hidService.setFullKeymap(latest);
       if (supportsExplicitSave.value) {
         await hidService.saveConfig();
       }
-      keymapOriginal.value = cloneKeymapConfig(keymap.value);
+      keymapOriginal.value = cloneKeymapConfig(latest);
+      dirtyKeyActions.clear();
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : "保存失败";
       throw error;
@@ -459,6 +658,10 @@ export const useDeviceStore = defineStore("device", () => {
       if (supportsExplicitSave.value) {
         await hidService.saveConfig();
       }
+      // Firmware enforces constraints such as indicator minimum brightness
+      // and supported modes. Read back the authoritative value so the UI
+      // reflects the actual hardware state rather than the requested value.
+      rgbConfig.value = await hidService.getRgbConfig();
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : "保存失败";
       throw error;
@@ -480,6 +683,7 @@ export const useDeviceStore = defineStore("device", () => {
       if (supportsExplicitSave.value) {
         await hidService.saveConfig();
       }
+      fnKeyConfig.value = await hidService.getFnKeyConfig();
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : "保存失败";
       throw error;
@@ -523,7 +727,7 @@ export const useDeviceStore = defineStore("device", () => {
       await hidService.resetConfig();
       macroStore.reset();
       await refreshDeviceInfo();
-      if (!capabilities.value.receiverRole) {
+      if (!capabilities.value.receiverRole || remoteTargetReady.value) {
         await refreshKeymap();
       }
       if (supportsRgb.value) {
@@ -560,6 +764,7 @@ export const useDeviceStore = defineStore("device", () => {
       keyIndex < actualKeyCount.value
     ) {
       keymap.value.layers[layer].keys[keyIndex] = { ...action };
+      dirtyKeyActions.set(`${layer}:${keyIndex}`, { ...action });
     }
   }
 
@@ -585,6 +790,15 @@ export const useDeviceStore = defineStore("device", () => {
     if (layerIndex >= 0 && layerIndex < keymap.value.numLayers) {
       currentEditLayer.value = layerIndex;
     }
+  }
+
+  /** 切换设备实际当前层（与软件编辑层分离）。 */
+  async function setDeviceLayer(layerIndex: number): Promise<void> {
+    const state = await hidService.setLayerState(layerIndex);
+    if (deviceStatus.value) {
+      deviceStatus.value = { ...deviceStatus.value, currentLayer: state.currentLayer };
+    }
+    keymap.value.currentLayer = state.currentLayer;
   }
 
   /** 增加层数 */
@@ -625,6 +839,7 @@ export const useDeviceStore = defineStore("device", () => {
   function discardChanges(): void {
     keymap.value = cloneKeymapConfig(keymapOriginal.value);
     currentEditLayer.value = keymap.value.currentLayer;
+    dirtyKeyActions.clear();
   }
 
   // ========================================
@@ -633,15 +848,61 @@ export const useDeviceStore = defineStore("device", () => {
 
   /** 内部轮询: 每次取 SysStatus，并同步刷新电池电压 */
   async function _pollStatus(): Promise<void> {
+    if (_pollInFlight) return;
+    _pollInFlight = true;
     try {
-      const status = await hidService.getSysStatus();
-      deviceStatus.value = status;
-      // Drain at most one receiver event per status tick. This keeps the
-      // terminal useful for RF diagnosis without turning LOG_GET into a
-      // visible polling flood.
       if (capabilities.value.receiverRole) {
-        await readReceiverBootDiagnostics();
+        /* Keep the receiver USB session alive while independently tracking
+         * the RF peer. This mirrors the original wireless polling model and
+         * prevents a stale receiver SYS_STATUS from masquerading as the
+         * keyboard's connection/layer state. */
+        try {
+          const pair = await hidService.getPairStatus();
+          const linked = pair.state === 'connected' && pair.linkConfirmed !== false;
+          remoteTargetLoaded.value = linked || (pair.hasPeer === true && remoteTargetLoaded.value);
+          if (deviceStatus.value) {
+            deviceStatus.value = {
+              ...deviceStatus.value,
+              connectionState: linked ? 1 : 0,
+            };
+          }
+        } catch {
+          /* Preserve the last known RF state on a single diagnostic miss. */
+        }
       }
+      const status = await hidService.getSysStatus();
+      if (capabilities.value.receiverRole && deviceStatus.value) {
+        /* Receiver SYS_STATUS has no battery. Preserve the most recent remote
+         * keyboard reading until the following BATTERY transaction completes. */
+        status.batteryLevel = deviceStatus.value.batteryLevel;
+        status.isCharging = deviceStatus.value.isCharging;
+      }
+      deviceStatus.value = status;
+      if (capabilities.value.receiverRole) {
+        /* Drain one receiver management event per status cycle. LOG_GET is a
+         * local USB command and must remain independent from the RF tunnel. */
+        await readReceiverBootDiagnostics(1).catch(() => {});
+      }
+      /* A receiver's SYS_STATUS describes the receiver, whose layer is
+       * always zero.  The BLE/wired implementation obtains the live keyboard
+       * layer through LAYER_GET; use the same path for a remote target while
+       * keeping the software edit layer independent. */
+      if (capabilities.value.receiverRole && remoteTargetLoaded.value && keymapLoaded.value) {
+        try {
+          const remoteLayer = await hidService.getLayerState();
+          deviceStatus.value = {
+            ...deviceStatus.value,
+            currentLayer: remoteLayer.currentLayer,
+          };
+          keymap.value.currentLayer = remoteLayer.currentLayer;
+        } catch {
+          /* A transient RF miss must not discard the last known layer. */
+        }
+      }
+      // Receiver LOG_GET is an optional diagnostic queue. Do not poll it as
+      // part of the connection/status path: an empty or busy diagnostic
+      // queue must never produce a visible connection error or interfere with
+      // pairing and remote configuration transactions.
 
       // 注释掉自动同步：让编辑层和当前层独立
       // 用户可以在设备使用层5的同时，在软件上编辑层2
@@ -650,12 +911,21 @@ export const useDeviceStore = defineStore("device", () => {
       // }
 
       _pollTick++;
-      if (supportsBattery.value) {
+      if (supportsBattery.value && (!capabilities.value.receiverRole || keymapLoaded.value)) {
         const bat = await hidService.getBattery();
+        // Receiver SYS_STATUS describes the receiver and has no battery
+        // value. The authoritative battery belongs to the proxied keyboard.
+        deviceStatus.value = {
+          ...deviceStatus.value,
+          batteryLevel: bat.level,
+          isCharging: bat.isCharging,
+        };
         batteryVoltage.value = bat.voltage;
       }
     } catch {
       /* 轮询失败静默忽略, 下次重试 */
+    } finally {
+      _pollInFlight = false;
     }
   }
 
@@ -663,10 +933,17 @@ export const useDeviceStore = defineStore("device", () => {
   function startStatusPolling(): void {
     stopStatusPolling();
     _pollTick = 0;
-    if (supportsBattery.value) {
+    if (supportsBattery.value && (!capabilities.value.receiverRole || keymapLoaded.value)) {
       hidService
         .getBattery()
         .then((bat) => {
+          if (deviceStatus.value) {
+            deviceStatus.value = {
+              ...deviceStatus.value,
+              batteryLevel: bat.level,
+              isCharging: bat.isCharging,
+            };
+          }
           batteryVoltage.value = bat.voltage;
         })
         .catch(() => {});
@@ -682,6 +959,7 @@ export const useDeviceStore = defineStore("device", () => {
       clearInterval(_pollTimer);
       _pollTimer = null;
     }
+    _pollInFlight = false;
   }
 
   return {
@@ -717,6 +995,13 @@ export const useDeviceStore = defineStore("device", () => {
     supportsExplicitSave,
     supportsWireless,
     supports2g4,
+    remoteTargetReady,
+    remoteDeviceInfo,
+    remoteTargetLoaded,
+    remoteLayoutKnown,
+    keymapLoaded,
+    canSaveKeymap,
+    isReceiverOnly: computed(() => capabilities.value.receiverRole && !remoteTargetReady.value),
     keyboardTypeName,
     actualKeyCount,
     isDevFirmware,
@@ -745,6 +1030,7 @@ export const useDeviceStore = defineStore("device", () => {
     setKeyAction,
     getKeyAction,
     setEditLayer,
+    setDeviceLayer,
     addLayer,
     removeLayer,
     discardChanges,

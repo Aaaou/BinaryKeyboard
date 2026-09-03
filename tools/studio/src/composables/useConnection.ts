@@ -55,7 +55,9 @@ export function useConnection() {
   ): Promise<boolean> {
     let lastError: unknown = null;
 
-    for (let attempt = 1; attempt <= CONNECT_RETRY_COUNT; attempt++) {
+    const receiverConnection = device.productId === 0x2108;
+    const retryCount = receiverConnection ? 1 : CONNECT_RETRY_COUNT;
+    for (let attempt = 1; attempt <= retryCount; attempt++) {
       const opened = await deviceStore.openDevice(device);
       if (!opened) {
         lastError = new Error(deviceStore.errorMessage || "无法连接设备");
@@ -84,7 +86,7 @@ export function useConnection() {
         }
       }
 
-      if (attempt < CONNECT_RETRY_COUNT) {
+      if (attempt < retryCount) {
         await new Promise((r) => setTimeout(r, CONNECT_RETRY_DELAY_MS));
       }
     }
@@ -146,7 +148,7 @@ export function useConnection() {
 
   async function refreshAll() {
     try {
-      if (!deviceStore.capabilities.receiverRole) {
+      if (!deviceStore.capabilities.receiverRole || deviceStore.remoteTargetReady) {
         await deviceStore.refreshKeymap();
       }
       if (deviceStore.supportsRgb) {

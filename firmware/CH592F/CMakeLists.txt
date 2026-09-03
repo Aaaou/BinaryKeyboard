@@ -271,13 +271,20 @@ else()
     list(APPEND CH592_COMPILE_DEFINITIONS
         UART_LOG_ENABLE=0
         KBD_DEBUG_BUILD=0
-        KBD_USB_LOG_ENABLE=0
-        KBD_LOG_DEFAULT_ENABLED=0
     )
+    if(NOT KBD_RADIO_2G4_ENABLED)
+        list(APPEND CH592_COMPILE_DEFINITIONS KBD_USB_LOG_ENABLE=0 KBD_LOG_DEFAULT_ENABLED=0)
+    endif()
 endif()
 
 if(KBD_RADIO_2G4_ENABLED)
     list(APPEND CH592_COMPILE_DEFINITIONS KBD_RADIO_2G4_ENABLED=1)
+    if(NOT KBD_RECEIVER_BUILD)
+        # Keep RF management diagnostics available through the keyboard's
+        # vendor HID endpoint in release 2.4G images, but do not stream them
+        # until Studio explicitly enables logging.
+        list(APPEND CH592_COMPILE_DEFINITIONS KBD_USB_LOG_ENABLE=1 KBD_LOG_DEFAULT_ENABLED=0)
+    endif()
 endif()
 if(KBD_RECEIVER_BUILD)
     list(APPEND CH592_COMPILE_DEFINITIONS

@@ -24,6 +24,11 @@ const modeNames: Record<number, string> = {
 const rgbEnabled = computed(() => deviceStore.rgbConfig.enabled);
 const modeLabel = computed(() => modeNames[deviceStore.rgbConfig.mode] ?? '未知');
 const brightnessLabel = computed(() => `${Math.round(deviceStore.rgbConfig.brightness * 100 / 255)}%`);
+const stateLabel = computed(() => {
+  // CH592 keeps the independent status indicator active when the key-light
+  // channel is disabled. Do not describe that state as "all lights off".
+  return rgbEnabled.value ? modeLabel.value : '按键灯关闭 · 指示灯保持';
+});
 
 async function toggleRgb(event: Event) {
   event.stopPropagation();
@@ -44,7 +49,7 @@ async function toggleRgb(event: Event) {
   <StudioSidebarEntry
     class="rgb-entry"
     title="灯光与电源"
-    :meta="`${rgbEnabled ? modeLabel : '关闭'} · 亮度 ${brightnessLabel}`"
+    :meta="`${stateLabel} · 亮度 ${brightnessLabel}`"
     icon="pi pi-palette"
     aria-label="打开灯光与电源设置"
     @open="emit('open')"

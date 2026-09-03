@@ -196,6 +196,11 @@ const rgbModeNames: Record<number, string> = {
 
 const rgbStatus = computed(() => {
   if (!supportsRgb.value) return '不支持';
+  // The firmware keeps the indicator channel active even when the RGB
+  // switch is off. The status summary should describe the user-visible
+  // keyboard-light state, so an explicitly disabled config is shown as off
+  // regardless of the stored effect mode.
+  if (!deviceStore.rgbConfig?.enabled) return '按键灯关闭';
   const mode = deviceStore.rgbConfig?.mode ?? 0;
   return rgbModeNames[mode] ?? '关闭';
 });

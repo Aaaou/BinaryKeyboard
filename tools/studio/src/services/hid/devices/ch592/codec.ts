@@ -4,6 +4,7 @@ import {
   DeviceProtocol,
   FRAME_SIZE,
   MAX_FN_KEYS,
+  MAX_LAYERS,
   MAX_KEYS,
   MacroActionType,
   OsMode,
@@ -27,7 +28,8 @@ import {
 } from '@/types/protocol';
 import { FIRMWARE_VERSION_META } from '@/generated/versionConfig';
 import { parseLogFrame, parseReceiveFrame, parseSendFrame } from '@/utils/protocolParser';
-import type { BatteryInfo, HidOptionalOperations, RadioCapabilities, PairStatus, ReceiverBootLogEntry } from '../../common/types';
+import { useTerminalStore } from '@/stores/terminalStore';
+import type { BatteryInfo, HidOptionalOperations, LayerState, RadioCapabilities, PairStatus, ReceiverBootLogEntry } from '../../common/types';
 import type {
   CodecInboundPacket,
   CodecTransport,
@@ -67,10 +69,14 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   readonly chipFamily = FIRMWARE_VERSION_META.CH592F.chipFamily;
   private meowfsCache: MeowFsCache | null = null;
   private supportsSeamlessWake = false;
+  private receiverProxy = false;
+  private receiverCooldownUntil = 0;
 
   resetState(): void {
     this.meowfsCache = null;
     this.supportsSeamlessWake = false;
+    this.receiverProxy = false;
+    this.receiverCooldownUntil = 0;
     this.capabilities = CH592_CAPABILITIES;
   }
 
@@ -95,6 +101,12 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       setMacroData: (slot, macro) => this.setMacroData(transport, slot, macro),
       deleteMacro: (slot) => this.deleteMacro(transport, slot),
       getRadioCapabilities: () => this.getRadioCapabilities(transport),
+      // `receiverProxy` is discovered from SYS_INFO after this operation
+      // table is created.  Do not snapshot the initial false value here or a
+      // 2.4G receiver can never expose its paired keyboard descriptor.
+      getRemoteDeviceInfo: () => this.getRemoteDeviceInfo(transport),
+      getLayerState: () => this.getLayerState(transport),
+      setLayerState: (layer) => this.setLayerState(transport, layer),
       getPairStatus: () => this.getPairStatus(transport),
       startPairing: () => this.runOkCommand(transport, Command.RADIO_PAIR_START, 'RADIO_PAIR_START'),
       cancelPairing: () => this.runOkCommand(transport, Command.RADIO_PAIR_CANCEL, 'RADIO_PAIR_CANCEL'),
@@ -150,7 +162,7 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       };
     }
 
-    const parsed = parseReceiveFrame(frame);
+    const parsed = parseReceiveFrame(frame, { receiverRole: this.capabilities.receiverRole });
     return {
       kind: 'response',
       entry: {
@@ -171,12 +183,15 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   parseSysInfo(resp: DataView): DeviceInfo {
     const d = this.expectOk(resp, 'SYS_INFO');
     const receiverRole = resp.getUint8(d + 15) === 1;
+    this.receiverProxy = receiverRole;
     // The receiver exposes the same transport as a keyboard but deliberately
     // implements only system and radio commands. Do not let its USB PID make
     // the Studio issue keyboard-only reads during connection initialization.
     this.capabilities = receiverRole
       ? {
           ...CH592_CAPABILITIES,
+          // Before remote capability discovery this is receiver-only. Do not
+          // expose keyboard controls or poll battery until RF is connected.
           multiLayer: false,
           layerKeyActions: false,
           rgb: false,
@@ -232,10 +247,11 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       isCharging: resp.getUint8(d + 5) !== 0,
     };
 
-    // SYS_STATUS must be self-describing.  During connection the status poll
-    // can happen before SYS_INFO has set receiverRole, so do not make this
-    // wire-format decision depend on cached capabilities.
-    if (status.workMode === 2 && resp.getUint8(2) >= 9) {
+    // 2.4G keyboards and receivers both use workMode=2 and a 9-byte status
+    // payload. The receiver role comes from SYS_INFO; using workMode here
+    // mislabels a perfectly working 2.4G keyboard as an RF host and treats
+    // its battery bytes as startup diagnostics.
+    if (this.capabilities.receiverRole && resp.getUint8(2) >= 9) {
       status.receiverStartupStage = resp.getUint8(d + 6);
       status.receiverHostStartupState = resp.getUint8(d + 7);
       status.receiverHostStartupResult = resp.getUint8(d + 8);
@@ -249,9 +265,20 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseKeymap(resp: DataView): { numLayers: number; currentLayer: number; defaultLayer: number; layer: LayerConfig } {
     const d = this.expectOk(resp, 'KEYMAP_GET');
+    const payloadLength = resp.getUint8(2);
+    // KEYMAP_GET returns [OK, numLayers, currentLayer, defaultLayer,
+    // 8 * 4-byte actions].  A short response must never be interpreted as
+    // an all-empty keymap: doing so would make the next save erase mappings.
+    const requiredPayload = 4 + MAX_KEYS * 4;
+    if (payloadLength < requiredPayload || resp.byteLength < d + payloadLength) {
+      throw new Error(`KEYMAP_GET 返回长度错误: ${payloadLength}，需要至少 ${requiredPayload}`);
+    }
     const numLayers = resp.getUint8(d + 1);
     const currentLayer = resp.getUint8(d + 2);
     const defaultLayer = resp.getUint8(d + 3);
+    if (numLayers < 1 || numLayers > 5 || currentLayer >= numLayers || defaultLayer >= numLayers) {
+      throw new Error(`KEYMAP_GET 层信息无效: num=${numLayers}, current=${currentLayer}, default=${defaultLayer}`);
+    }
     const keys: KeyAction[] = [];
 
     for (let i = 0; i < MAX_KEYS; i++) {
@@ -287,6 +314,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseRgbConfig(resp: DataView): RgbConfig {
     const d = this.expectOk(resp, 'RGB_GET');
+    const payloadLength = resp.getUint8(2);
+    if (payloadLength < 13 || resp.byteLength < d + payloadLength) {
+      throw new Error(`RGB_GET 返回长度错误: ${payloadLength}`);
+    }
     this.supportsSeamlessWake = resp.getUint8(2) >= 14;
     return {
       enabled: resp.getUint8(d + 1) !== 0,
@@ -329,6 +360,11 @@ export class Ch592Codec implements DeviceCodec<DataView> {
 
   parseFnKeyConfig(resp: DataView): FnKeyConfig {
     const d = this.expectOk(resp, 'FNKEY_GET');
+    const payloadLength = resp.getUint8(2);
+    const requiredPayload = 1 + MAX_FN_KEYS * 8;
+    if (payloadLength < requiredPayload || resp.byteLength < d + payloadLength) {
+      throw new Error(`FNKEY_GET 返回长度错误: ${payloadLength}，需要至少 ${requiredPayload}`);
+    }
     const fnKeys: FnKeyEntry[] = [];
 
     for (let i = 0; i < MAX_FN_KEYS; i++) {
@@ -450,25 +486,50 @@ export class Ch592Codec implements DeviceCodec<DataView> {
     cmd: Command,
     sub = 0,
     data: Uint8Array = new Uint8Array(0),
-    timeout = 3000,
+    // RF management transactions have a firmware-side three second deadline.
+    // Keep a small transport margin instead of waiting eight seconds per
+    // layer when a remote keyboard is unavailable.
+    /* The receiver firmware has a 3s transaction deadline, but waiting that
+     * long for every optional panel can exceed the Studio initialization
+     * budget when a legacy keyboard does not answer one command. RF frames
+     * are repeated at the firmware layer; keep a bounded host-side margin. */
+    timeout = this.receiverProxy ? 3000 : 3000,
   ): Promise<DataView> {
-    return transport.sendAndWait(this.buildCommandFrame(cmd, sub, data), {
-      timeout,
-      timeoutLabel: '命令响应超时',
-    });
+    const now = Date.now();
+    if (this.receiverProxy && now < this.receiverCooldownUntil) {
+      await new Promise((resolve) => setTimeout(resolve, this.receiverCooldownUntil - now));
+    }
+    try {
+      return await transport.sendAndWait(this.buildCommandFrame(cmd, sub, data), {
+        timeout,
+        timeoutLabel: '命令响应超时',
+      });
+    } catch (error) {
+      /* A receiver transaction can outlive the browser timeout by a small
+       * amount. Cool down before issuing the next proxy command so one stale
+       * RF transaction cannot turn every following panel into ERR_BUSY. */
+      if (this.receiverProxy && error instanceof Error && /超时/.test(error.message)) {
+        this.receiverCooldownUntil = Date.now() + 3200;
+      }
+      throw error;
+    }
   }
 
   private async getKeymap(
     transport: CodecTransport<DataView>,
     layerIndex: number,
   ): Promise<{ numLayers: number; currentLayer: number; defaultLayer: number; layer: KeymapConfig['layers'][number] }> {
-    const resp = await this.sendCommand(transport, Command.KEYMAP_GET, layerIndex);
-    return this.parseKeymap(resp);
+    return this.readRemoteWithRetry(async () => {
+      const resp = await this.sendCommand(transport, Command.KEYMAP_GET, layerIndex);
+      return this.parseKeymap(resp);
+    });
   }
 
   private async getRgbConfig(transport: CodecTransport<DataView>): Promise<RgbConfig> {
-    const resp = await this.sendCommand(transport, Command.RGB_GET);
-    return this.parseRgbConfig(resp);
+    return this.readRemoteWithRetry(async () => {
+      const resp = await this.sendCommand(transport, Command.RGB_GET);
+      return this.parseRgbConfig(resp);
+    });
   }
 
   private async setRgbConfig(transport: CodecTransport<DataView>, config: RgbConfig): Promise<void> {
@@ -477,8 +538,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async getFnKeyConfig(transport: CodecTransport<DataView>): Promise<FnKeyConfig> {
-    const resp = await this.sendCommand(transport, Command.FNKEY_GET);
-    return this.parseFnKeyConfig(resp);
+    return this.readRemoteWithRetry(async () => {
+      const resp = await this.sendCommand(transport, Command.FNKEY_GET);
+      return this.parseFnKeyConfig(resp);
+    });
   }
 
   private async setFnKeyConfig(transport: CodecTransport<DataView>, config: FnKeyConfig): Promise<void> {
@@ -487,8 +550,10 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async getOsMode(transport: CodecTransport<DataView>): Promise<OsModeConfig> {
-    const resp = await this.sendCommand(transport, Command.CFG_OS_GET);
-    return this.parseOsModeConfig(resp);
+    return this.readRemoteWithRetry(async () => {
+      const resp = await this.sendCommand(transport, Command.CFG_OS_GET);
+      return this.parseOsModeConfig(resp);
+    });
   }
 
   private async setOsMode(transport: CodecTransport<DataView>, config: OsModeConfig): Promise<void> {
@@ -497,8 +562,130 @@ export class Ch592Codec implements DeviceCodec<DataView> {
   }
 
   private async getBattery(transport: CodecTransport<DataView>): Promise<BatteryInfo> {
-    const resp = await this.sendCommand(transport, Command.BATTERY);
-    return this.parseBatteryInfo(resp);
+    return this.readRemoteWithRetry(async () => {
+      const resp = await this.sendCommand(transport, Command.BATTERY);
+      return this.parseBatteryInfo(resp);
+    });
+  }
+
+  private async readRemoteWithRetry<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!this.receiverProxy) throw error;
+      /* sendCommand records a cooldown after an RF timeout. Calling the same
+       * read again waits for that transaction to expire before retrying. */
+      return operation();
+    }
+  }
+
+  private parseLayerState(resp: DataView): LayerState {
+    const d = this.expectOk(resp, 'LAYER_GET');
+    const payloadLength = resp.getUint8(2);
+    if (payloadLength < 4 || resp.byteLength < d + payloadLength) {
+      throw new Error(`LAYER_GET 返回长度错误: ${payloadLength}`);
+    }
+    return {
+      currentLayer: resp.getUint8(d + 1),
+      numLayers: resp.getUint8(d + 2),
+      defaultLayer: resp.getUint8(d + 3),
+    };
+  }
+
+  private async getLayerState(transport: CodecTransport<DataView>): Promise<LayerState> {
+    return this.parseLayerState(await this.sendCommand(transport, Command.LAYER_GET));
+  }
+
+  private async setLayerState(transport: CodecTransport<DataView>, layer: number): Promise<LayerState> {
+    if (!Number.isInteger(layer) || layer < 0 || layer >= MAX_LAYERS) {
+      throw new Error(`无效层索引: ${layer}`);
+    }
+    const resp = await this.sendCommand(
+      transport,
+      Command.LAYER_SET,
+      0,
+      new Uint8Array([layer]),
+    );
+    const d = this.expectOk(resp, 'LAYER_SET');
+    const payloadLength = resp.getUint8(2);
+    if (payloadLength < 2 || resp.byteLength < d + payloadLength) {
+      throw new Error(`LAYER_SET 返回长度错误: ${payloadLength}`);
+    }
+    return {
+      currentLayer: resp.getUint8(d + 1),
+      numLayers: 0,
+      defaultLayer: 0,
+    };
+  }
+
+  private async getRemoteDeviceInfo(transport: CodecTransport<DataView>): Promise<DeviceInfo> {
+    /* Capability discovery is an optional enhancement. Older keyboard
+     * images already support the original keymap/RGB/FN tunnel but do not
+     * implement 0x0A; keep a short probe timeout so that compatibility mode
+     * is reached quickly instead of blocking connection for several seconds. */
+    try {
+      const resp = await this.sendCommand(
+        transport,
+        Command.RADIO_REMOTE_CAPS,
+        0,
+        new Uint8Array(0),
+        this.receiverProxy ? 4000 : undefined,
+      );
+      return this.parseRemoteDeviceInfoResponse(resp);
+    } catch (error) {
+      // A receiver can report RFBound CONNECTED while the application
+      // management tunnel is stalled. Capture the receiver-side transaction
+      // state at the exact failure point so the Debug Terminal distinguishes
+      // RF link loss, TX queue blockage, and missing keyboard response.
+      if (this.receiverProxy) {
+        try {
+          const status = await this.getPairStatus(transport);
+          const terminal = useTerminalStore();
+          const age = status.lastValidAgeMs === 0xffffffff ? 'never' : `${status.lastValidAgeMs} ms`;
+          terminal.addEntry({
+            direction: 'device', level: 'error', command: 'RF_MGMT_DIAGNOSTIC',
+            cmdHex: '04', sub: 0, dataLen: 0, rawHex: '',
+            parsed: `RADIO_REMOTE_CAPS failed: ${error instanceof Error ? error.message : 'unknown error'} | ` +
+              `pair=${status.state} link=${status.linkConfirmed ? 'confirmed' : 'not-confirmed'} | ` +
+              `last-valid=${age} | mgmt flags=${status.managementFlags === undefined ? 'n/a' : `0x${status.managementFlags.toString(16).padStart(2, '0')}`} ` +
+              `txn=${status.managementTransaction ?? 0} cmd=0x${(status.managementCommand ?? 0).toString(16).padStart(2, '0')} ` +
+              `tx=${status.managementTxFragment ?? 0}/${status.managementTxFragments ?? 0} ` +
+              `rx=${status.managementRxFragment ?? 0}/${status.managementRxFragments ?? 0}`,
+            statusCode: 'RF_MGMT',
+          });
+        } catch {
+          // The status snapshot is best effort and must not mask the original
+          // remote capability failure.
+        }
+      }
+      throw error;
+    }
+  }
+
+  private parseRemoteDeviceInfoResponse(resp: DataView): DeviceInfo {
+    const info = this.parseSysInfo(resp);
+    /* The response is a remote keyboard descriptor, not the USB receiver.
+     * Keep the transport's receiver proxy flag so subsequent commands still
+     * use the RF management path. */
+    this.receiverProxy = true;
+    // parseSysInfo intentionally uses the receiver capability set while the
+    // USB device is a receiver.  RADIO_REMOTE_CAPS, however, describes the
+    // paired keyboard, so start from the full CH592 keyboard capability set
+    // instead of inheriting the receiver's disabled keyboard features.
+    info.capabilities = {
+      ...CH592_CAPABILITIES,
+      receiverRole: true,
+      radio2g4: true,
+      explicitSave: true,
+      reset: false,
+      wireless: false,
+      iap: false,
+    };
+    // Keep the codec's capability cache aligned with the remote target. The
+    // USB transport remains a receiver proxy even though the remote SYS_INFO
+    // correctly reports receiverRole=0.
+    this.capabilities = info.capabilities;
+    return info;
   }
 
   private async getRadioCapabilities(transport: CodecTransport<DataView>): Promise<RadioCapabilities> {
@@ -559,6 +746,28 @@ export class Ch592Codec implements DeviceCodec<DataView> {
       lastReleaseQueuedAgeMs: payloadLength >= 39 ? diagAgeMs(35) : undefined,
       lastReleaseSentAgeMs: payloadLength >= 43 ? diagAgeMs(39) : undefined,
       releaseBusyCount: payloadLength >= 45 ? resp.getUint16(d + 43, true) : undefined,
+      managementFlags: payloadLength >= 52
+        ? resp.getUint8(d + (role === 'receiver' ? 45 : 48)) : undefined,
+      managementTransaction: payloadLength >= 52
+        ? resp.getUint8(d + (role === 'receiver' ? 46 : 49)) : undefined,
+      managementCommand: payloadLength >= 52
+        ? resp.getUint8(d + (role === 'receiver' ? 47 : 50)) : undefined,
+      managementTxFragment: payloadLength >= 55 && role === 'keyboard'
+        ? resp.getUint8(d + 53) : (payloadLength >= 52 ? resp.getUint8(d + 48) : undefined),
+      managementTxFragments: payloadLength >= 55 && role === 'keyboard'
+        ? resp.getUint8(d + 54) : (payloadLength >= 52 ? resp.getUint8(d + 49) : undefined),
+      managementRxFragment: payloadLength >= 53 && role === 'keyboard'
+        ? resp.getUint8(d + 51) : (payloadLength >= 52 ? resp.getUint8(d + 50) : undefined),
+      managementRxFragments: payloadLength >= 53 && role === 'keyboard'
+        ? resp.getUint8(d + 52) : (payloadLength >= 52 ? resp.getUint8(d + 51) : undefined),
+      managementRxCount: payloadLength >= 61 && role === 'keyboard' ? resp.getUint16(d + 55, true) : undefined,
+      managementExecCount: payloadLength >= 61 && role === 'keyboard' ? resp.getUint16(d + 57, true) : undefined,
+      managementResponseTxCount: payloadLength >= 61 && role === 'keyboard' ? resp.getUint16(d + 59, true) : undefined,
+      rfValidFrameCount: payloadLength >= 61 && role === 'receiver' ? resp.getUint16(d + 52, true) : undefined,
+      keyboardRfReportCount: payloadLength >= 61 && role === 'receiver' ? resp.getUint16(d + 54, true) : undefined,
+      keyboardUsbSubmitCount: payloadLength >= 61 && role === 'receiver' ? resp.getUint16(d + 56, true) : undefined,
+      keyboardUsbBusyCount: payloadLength >= 61 && role === 'receiver' ? resp.getUint16(d + 58, true) : undefined,
+      rxQuarantined: payloadLength >= 61 && role === 'receiver' ? resp.getUint8(d + 60) !== 0 : undefined,
     };
   }
 

@@ -37,6 +37,8 @@ const hasPendingSave = ref(false);
 const baseFnActionOptions = [
   { value: FnAction.NONE, label: '无动作' },
   { value: FnAction.MODE_TOGGLE, label: '切换模式' },
+  { value: FnAction.BLE_ADV, label: '开始蓝牙广播' },
+  { value: FnAction.BLE_DISCONNECT, label: '断开蓝牙' },
   { value: FnAction.BLE_CLEAR_BONDS, label: '清除配对' },
   { value: FnAction.RGB_TOGGLE, label: 'RGB 开关' },
   { value: FnAction.RGB_MODE_NEXT, label: 'RGB 下一模式' },
@@ -45,7 +47,10 @@ const baseFnActionOptions = [
   { value: FnAction.RGB_BRIGHT_DOWN, label: '亮度-' },
   { value: FnAction.LAYER_NEXT, label: '下一层' },
   { value: FnAction.LAYER_PREV, label: '上一层' },
+  { value: FnAction.LAYER_SET, label: '设置指定层' },
+  { value: FnAction.MACRO, label: '执行宏' },
   { value: FnAction.SLEEP, label: '休眠' },
+  { value: FnAction.BOOTLOADER, label: '进入升级模式' },
 ];
 
 const fnActionOptions = computed(() => [

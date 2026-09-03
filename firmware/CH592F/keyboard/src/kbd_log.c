@@ -98,7 +98,8 @@ static int queue_pop(log_entry_t *out)
 static uint8_t usb_log_record_allowed(void)
 {
     return (s_enabled &&
-            KBD_Mode_Get() == KBD_WORK_MODE_USB);
+            (KBD_Mode_Get() == KBD_WORK_MODE_USB ||
+             KBD_Mode_Get() == KBD_WORK_MODE_2G4));
 }
 #endif
 
@@ -124,7 +125,11 @@ void KBD_Log_Flush(void)
     return;
 #else
     /* USB 未插入时清空队列，防止 EP4 阻塞主循环 */
-    if (KBD_Mode_Get() != KBD_WORK_MODE_USB || !KBD_Mode_USB_IsPlugged()) {
+    if (!KBD_Mode_USB_IsPlugged()
+#if !KBD_RADIO_2G4_ENABLED
+        || KBD_Mode_Get() != KBD_WORK_MODE_USB
+#endif
+    ) {
         s_head = s_tail;
         return;
     }
@@ -236,5 +241,15 @@ void KBD_Log_SystemEvent(uint8_t event)
     if (!usb_log_record_allowed()) return;
     uint8_t data[1] = { event };
     queue_push(KBD_LOG_SYSTEM_EVENT, data, 1);
+#endif
+}
+
+void KBD_Log_RadioMgmtEvent(uint8_t event, uint8_t command, uint8_t result)
+{
+#if KBD_USB_LOG_ENABLE
+    uint8_t data[3] = {event, command, result};
+    if (usb_log_record_allowed()) queue_push(KBD_LOG_SYSTEM_EVENT, data, 3);
+#else
+    (void)event; (void)command; (void)result;
 #endif
 }

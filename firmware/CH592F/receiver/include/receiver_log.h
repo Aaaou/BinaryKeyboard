@@ -23,6 +23,20 @@
 #define RX_LOG_HID_RELEASE_QUEUED   0x90u
 #define RX_LOG_HID_RELEASE_SENT     0x91u
 #define RX_LOG_HID_RELEASE_BUSY     0x92u
+/* Remote management tunnel diagnostics. result carries the command or
+ * protocol status so LOG_GET can identify where a transaction stopped. */
+#define RX_LOG_MGMT_REQUEST         0x93u
+#define RX_LOG_MGMT_TX_QUEUED       0x94u
+#define RX_LOG_MGMT_RESPONSE        0x95u
+#define RX_LOG_MGMT_TIMEOUT         0x96u
+#define RX_LOG_MGMT_REJECT          0x97u
+#define RX_LOG_MGMT_TX_SUBMITTED    0x98u
+#define RX_LOG_MGMT_RX_FIRST        0x99u
+#define RX_LOG_MGMT_RX_FRAGMENT     0x9Au
+#define RX_LOG_MGMT_RX_COMPLETE     0x9Bu
+#define RX_LOG_MGMT_SEND_BUSY       0x9Cu
+#define RX_LOG_MGMT_RX_CRC_ERROR    0x9Du
+#define RX_LOG_MGMT_RX_FRAGMENT_ERR 0x9Eu
 
 void Receiver_Log_Init(void);
 void Receiver_Log_Event(uint8_t event, uint8_t stage, uint8_t result);

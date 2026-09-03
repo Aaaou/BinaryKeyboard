@@ -34,6 +34,7 @@ const COMMAND_NAMES: Record<number, string> = {
   [Command.RADIO_PAIR_CLEAR]: "RADIO_PAIR_CLEAR",
   [Command.RADIO_POLL_RATE_GET]: "RADIO_POLL_RATE_GET",
   [Command.RADIO_POLL_RATE_SET]: "RADIO_POLL_RATE_SET",
+  [Command.RADIO_REMOTE_CAPS]: "RADIO_REMOTE_CAPS",
   [Command.CFG_SAVE]: "CFG_SAVE",
   [Command.CFG_LOAD]: "CFG_LOAD",
   [Command.CFG_RESET]: "CFG_RESET",
@@ -70,6 +71,7 @@ const COMMAND_LABELS: Record<number, string> = {
   [Command.RADIO_PAIR_CLEAR]: "清除 2.4G 配码",
   [Command.RADIO_POLL_RATE_GET]: "读取 USB 轮询率",
   [Command.RADIO_POLL_RATE_SET]: "设置 USB 轮询率",
+  [Command.RADIO_REMOTE_CAPS]: "获取远端键盘能力",
   [Command.CFG_SAVE]: "保存配置到 Flash",
   [Command.CFG_LOAD]: "从 Flash 加载配置",
   [Command.CFG_RESET]: "恢复出厂设置",
@@ -386,7 +388,7 @@ export function parseSendFrame(frame: Uint8Array): {
 // ============================================================================
 
 /** 解析响应帧为人类可读文本 */
-export function parseReceiveFrame(frame: Uint8Array): {
+export function parseReceiveFrame(frame: Uint8Array, context?: { receiverRole?: boolean }): {
   command: string;
   cmdHex: string;
   sub: number;
@@ -430,6 +432,7 @@ export function parseReceiveFrame(frame: Uint8Array): {
   // 详细解析响应数据
   switch (cmdByte) {
     case Command.SYS_INFO:
+    case Command.RADIO_REMOTE_CAPS:
       if (len >= 14) {
         const vid = (data[1] << 8) | data[2];
         const pid = (data[3] << 8) | data[4];
@@ -449,8 +452,8 @@ export function parseReceiveFrame(frame: Uint8Array): {
 
     case Command.SYS_STATUS:
       if (len >= 6) {
-        const receiver = len >= 9 && data[1] === 2;
-        const mode = receiver ? "2.4G 接收器" : data[1] === 0 ? "USB" : "BLE";
+        const receiver = context?.receiverRole === true;
+        const mode = receiver ? "2.4G 接收器" : data[1] === 0 ? "USB" : data[1] === 2 ? "2.4G 键盘" : "BLE";
         const connectionStates = ["未连接", "广播中", "已连接", "挂起"];
         const conn = connectionStates[data[2]] ?? `未知状态(${data[2]})`;
         const layer = data[3];
@@ -479,6 +482,7 @@ export function parseReceiveFrame(frame: Uint8Array): {
         const le32 = (offset: number) =>
           (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) |
             (data[offset + 3] << 24)) >>> 0;
+        const le16 = (offset: number) => data[offset] | (data[offset + 1] << 8);
         const role = data[2] === 1 ? "接收器" : "键盘";
         const fingerprint = le32(17);
         const ageTicks = le32(25);
@@ -499,6 +503,22 @@ export function parseReceiveFrame(frame: Uint8Array): {
           parsed += lastTxTicks === 0xffffffff
             ? " 最近TX=从未发送"
             : ` 最近TX=${Math.round(lastTxTicks * 1000 / 32768)}ms前`;
+        }
+        if (len >= 52 && data.length >= 52) {
+          if (data[2] === 1) {
+            const mf = data[45];
+            parsed += ` | 管理 flags=0x${mf.toString(16).padStart(2, '0')} txn=${data[46]} cmd=0x${data[47].toString(16).padStart(2, '0')}`;
+            parsed += ` TX分片=${data[48]}/${data[49]} RX分片=${data[50]}/${data[51]}`;
+          } else if (len >= 61) {
+            const mf = data[48];
+            parsed += ` | 管理 flags=0x${mf.toString(16).padStart(2, '0')} txn=${data[49]} cmd=0x${data[50].toString(16).padStart(2, '0')}`;
+            parsed += ` RX分片=${data[51]}/${data[52]} TX分片=${data[53]}/${data[54]}`;
+            parsed += ` 收到=${le16(55)} 执行=${le16(57)} 响应提交=${le16(59)}`;
+          }
+        }
+        if (len >= 61 && data[2] === 1) {
+          parsed += ` | HID RF有效=${le16(52)} 键盘报告=${le16(54)}`;
+          parsed += ` USB提交=${le16(56)} USB忙=${le16(58)} RX隔离=${data[60] ? '是' : '否'}`;
         }
       } else {
         parsed += ` | 旧状态包 ${len}B，无法读取绑定 ID；请刷入同一版本固件`;
@@ -607,8 +627,8 @@ export function parseReceiveFrame(frame: Uint8Array): {
       break;
 
     case Command.LAYER_GET:
-      if (len >= 3) {
-        parsed += ` | 当前层=${data[1] + 1}, 默认层=${data[2] + 1}`;
+      if (len >= 4) {
+        parsed += ` | 当前层=${data[1] + 1}, 层数=${data[2]}, 默认层=${data[3] + 1}`;
       }
       break;
   }
@@ -748,6 +768,10 @@ export function parseLogFrame(frame: Uint8Array): {
           [SystemLogEvent.BOOT]: "设备启动",
           [SystemLogEvent.SLEEP]: "进入休眠",
           [SystemLogEvent.WAKEUP]: "唤醒",
+          [SystemLogEvent.RF_MGMT_RX]: "键盘收到管理分片",
+          [SystemLogEvent.RF_MGMT_EXEC]: "键盘执行管理命令",
+          [SystemLogEvent.RF_MGMT_TX]: "键盘提交管理响应",
+          [SystemLogEvent.RF_MGMT_DROP]: "键盘管理帧丢弃",
           0x80: "接收器启动",
           0x81: "USB 已配置",
           0x82: "时间基准初始化开始",
@@ -757,8 +781,33 @@ export function parseLogFrame(frame: Uint8Array): {
           0x86: "RF Host 初始化开始",
           0x87: "RF Host 初始化完成",
           0x88: "RF Host 初始化失败",
+          0x89: "开始配码",
+          0x8a: "配码事务成功",
+          0x8b: "RF 配码超时",
+          0x8c: "RF 配码失败",
+          0x8d: "收到首个有效 RF 帧",
+          0x8e: "应用链路断开",
+          0x8f: "RF 链路超时回调",
+          0x90: "HID 释放已排队",
+          0x91: "HID 释放报告已提交",
+          0x92: "HID 释放端点忙",
+          0x93: "收到远端管理命令",
+          0x94: "远端管理请求已排队",
+          0x95: "远端管理响应已转发",
+          0x96: "远端管理命令超时",
+          0x97: "远端管理命令被拒绝",
+          0x98: "远端管理 RF DMA 已提交",
+          0x99: "收到远端管理响应首片",
+          0x9a: "收到远端管理响应分片",
+          0x9b: "远端管理响应完整",
+          0x9c: "远端管理 RF DMA 忙",
+          0x9d: "远端管理帧 CRC 错误",
+          0x9e: "远端管理响应分片错误",
         };
         parsed += ` | ${events[data[0]] || hex(data[0])}`;
+        if (data[0] >= SystemLogEvent.RF_MGMT_RX && data[0] <= SystemLogEvent.RF_MGMT_DROP && len >= 3) {
+          parsed += ` | 命令 0x${data[1].toString(16).padStart(2, '0')} | 值 ${data[2]}`;
+        }
         if (data[0] >= 0x80 && len >= 2) {
           parsed += ` | 阶段 ${data[1]}`;
           if (len >= 3 && data[2] !== 0) parsed += ` | 结果 ${data[2]}`;

@@ -11,6 +11,16 @@
           <span>编辑 <strong class="edit">{{ editLayerNumber }}</strong></span>
         </span>
         <button
+          v-if="!previewMode && deviceStore.keymapLoaded"
+          type="button"
+          class="layer-apply-btn"
+          title="将设备切换到编辑层"
+          aria-label="将设备切换到编辑层"
+          @click="switchDeviceLayer"
+        >
+          <i class="pi pi-play"></i>
+        </button>
+        <button
           type="button"
           class="layer-help-btn studio-help-link"
           v-tooltip.left="layerSwitchHint"
@@ -84,6 +94,7 @@ import { computed } from 'vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getLayerLayoutByType, type LayoutDef } from '@/config/layouts';
 import { DeviceProtocol, KeyboardType, KeyboardTypeInfo } from '@/types/protocol';
+import { showToast } from '@/services/toastService';
 
 const props = defineProps<{
   keyboardType: number;
@@ -154,6 +165,15 @@ function onKeyClick(key: LayoutDef['keys'][number]): void {
   deviceStore.setEditLayer(getLayerIndex(key.index));
 }
 
+async function switchDeviceLayer(): Promise<void> {
+  try {
+    await deviceStore.setDeviceLayer(deviceStore.currentEditLayer);
+    showToast('success', '层切换成功', `设备当前为层 ${deviceStore.currentEditLayer + 1}`);
+  } catch (error) {
+    showToast('error', '层切换失败', error instanceof Error ? error.message : '设备未响应');
+  }
+}
+
 function getKeyTitle(key: LayoutDef['keys'][number]): string {
   if (isEncoderPlaceholder(key)) {
     return '旋钮，不参与层选择';
@@ -220,6 +240,25 @@ function getKeyTitle(key: LayoutDef['keys'][number]): string {
 
 .layer-inline-readout strong.edit {
   color: #f59e0b;
+}
+
+.layer-apply-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid var(--c-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg-tertiary);
+  color: var(--c-accent);
+  cursor: pointer;
+}
+
+.layer-apply-btn:hover {
+  border-color: var(--c-accent);
+  background: var(--c-bg-secondary);
 }
 
 .layer-help-btn {

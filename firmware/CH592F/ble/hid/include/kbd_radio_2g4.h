@@ -25,6 +25,8 @@ uint32_t KBD_Radio2G4_GetTxBusy(void);
 uint32_t KBD_Radio2G4_GetTxFinished(void);
 uint32_t KBD_Radio2G4_GetLastTxAge(void);
 uint8_t KBD_Radio2G4_GetTxDescriptorsBusy(void);
+/* Management diagnostic payload used by RADIO_PAIR_STATUS. */
+void KBD_Radio2G4_GetManagementDiagnostics(uint8_t out[13]);
 int KBD_Radio2G4_SendKeyboardReport(uint8_t modifier, const uint8_t *keys, uint8_t count);
 int KBD_Radio2G4_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
 int KBD_Radio2G4_SendConsumerReport(uint16_t key);

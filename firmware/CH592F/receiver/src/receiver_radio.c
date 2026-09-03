@@ -6,6 +6,7 @@
 #include "RF.h"
 #include "CH59x_common.h"
 #include <string.h>
+#include "kbd_types.h"
 
 #define RX_NV_SLOT_A_ADDR 0x5000u
 #define RX_NV_SLOT_B_ADDR 0x5100u
@@ -131,14 +132,61 @@ static bool s_release_busy_logged;
 static volatile bool s_release_repeat_active;
 static uint32_t s_release_repeat_started;
 static volatile bool s_rx_quarantine;
+static uint8_t s_remote_capabilities[8];
+static bool s_remote_capabilities_valid;
 /* Device-side timestamps avoid confusing LOG_GET retrieval time with event
  * time when diagnosing RF-to-USB disconnect latency. */
 static volatile uint32_t s_last_link_timeout;
 static volatile uint32_t s_last_release_queued;
 static volatile uint32_t s_last_release_sent;
 static volatile uint16_t s_release_busy_count;
+static uint16_t s_valid_frame_count;
+static uint16_t s_keyboard_rx_count;
+static uint16_t s_keyboard_usb_sent_count;
+static uint16_t s_keyboard_usb_busy_count;
 #define RX_DIAG_NONE 0xFFFFFFFFu
+#define RX_MGMT_TIMEOUT_TICKS (3u * 32768u)
+#define RX_MGMT_TX_GAP_TICKS ((4u * 32768u) / 1000u)
+#define RX_MGMT_TX_REPEATS 3u
 extern RF_DMADESCTypeDef *pDMARxGet;
+extern RF_DMADESCTypeDef *pDMATxGet;
+static uint32_t s_session;
+static uint32_t s_sequence;
+static receiver_radio_mgmt_response_cb_t s_mgmt_callback;
+static uint8_t s_mgmt_transaction;
+static uint8_t s_mgmt_fragments;
+static uint8_t s_mgmt_next_fragment;
+static uint16_t s_mgmt_length;
+static uint8_t s_mgmt_buffer[64];
+static uint32_t s_mgmt_started;
+static uint8_t s_mgmt_command, s_mgmt_sub;
+static struct {
+    bool active, waiting_ack;
+    uint8_t frame[64], length, transaction, fragment, fragments, repeat;
+    uint32_t last_send;
+} s_mgmt_tx;
+static bool s_mgmt_ack_pending;
+static kbd_radio_mgmt_ack_t s_mgmt_ack;
+
+static int receiver_rf_enqueue(const uint8_t *data, uint8_t len)
+{
+    if (!data || len == 0u || len > 64u) return -1;
+    uint32_t irq;
+    SYS_DisableAllIrq(&irq);
+    if ((pDMATxGet->Status & STA_DMA_ENABLE) != 0u) {
+        SYS_RecoverIrq(irq);
+        return -1;
+    }
+    rfPackage_t *packet = (rfPackage_t *)pDMATxGet->BufferAddr;
+    packet->type = s_nv.device_id;
+    packet->length = (uint8_t)(PKT_ACK_LEN + len);
+    memcpy((uint8_t *)packet + PKT_HEAD_LEN, data, len);
+    pDMATxGet->BufferSize = PKT_HEAD_LEN + len;
+    pDMATxGet->Status = STA_DMA_ENABLE;
+    pDMATxGet = (RF_DMADESCTypeDef *)pDMATxGet->NextDescAddr;
+    SYS_RecoverIrq(irq);
+    return 0;
+}
 
 static void receiver_tmos_enable_irq(void)
 {
@@ -454,24 +502,123 @@ static void process_rf_rx(void)
     uint8_t descriptors_seen = 0u;
     while ((pDMARxGet->Status & STA_DMA_ENABLE) == 0u) {
         uint16_t raw_len = (uint16_t)(pDMARxGet->Status & STA_LEN_MASK);
-        if (!s_rx_quarantine &&
-            raw_len >= PKT_HEAD_LEN && raw_len <= pDMARxGet->BufferSize &&
+        if (raw_len >= PKT_HEAD_LEN && raw_len <= pDMARxGet->BufferSize &&
             raw_len <= (uint16_t)(PKT_HEAD_LEN + sizeof(kbd_radio_frame_t))) {
             uint16_t len = (uint16_t)(raw_len - PKT_HEAD_LEN);
             const kbd_radio_frame_t *frame =
                 (const kbd_radio_frame_t *)(pDMARxGet->BufferAddr + PKT_HEAD_LEN);
-            if (KBD_RadioProtocol_Validate(frame, len) && frame_is_new(frame)) {
-                s_last_session = frame->header.session;
-                s_last_sequence = frame->header.sequence;
+            if (!KBD_RadioProtocol_Validate(frame, len)) {
+                if (raw_len >= PKT_HEAD_LEN + sizeof(kbd_radio_frame_header_t) + sizeof(uint16_t))
+                    Receiver_Log_Event(RX_LOG_MGMT_RX_CRC_ERROR, KBD_RECEIVER_STARTUP_STAGE, 0u);
+            } else if (
+                (frame->header.type == KBD_RADIO_FRAME_MGMT_RESPONSE || frame_is_new(frame))) {
+                /* Management fragments have their own transaction/fragment
+                 * ordering. Do not let ordinary HID sequence traffic cause a
+                 * valid second keymap fragment to be discarded. */
+                if (frame->header.type != KBD_RADIO_FRAME_MGMT_RESPONSE) {
+                    s_last_session = frame->header.session;
+                    s_last_sequence = frame->header.sequence;
+                }
                 s_last_valid_rx = RTC_GetCycle32k();
                 s_has_sequence = true;
                 s_rf_disconnect_pending = false;
-                if (frame->header.type == KBD_RADIO_FRAME_KEYBOARD && frame->header.length == 8u) {
-                    keyboard_enqueue((const USB_KeyboardReport_t *)frame->payload);
+                /* A peer-filtered, CRC-valid application frame is stronger
+                 * evidence than RFBound's delayed timeout callback. Let the
+                 * first valid frame recover RX instead of leaving the link
+                 * permanently quarantined until the next manual pairing. */
+                s_rx_quarantine = false;
+                if (s_valid_frame_count != 0xFFFFu) s_valid_frame_count++;
+                if (frame->header.type == KBD_RADIO_FRAME_MGMT_RESPONSE) {
+                    const kbd_radio_mgmt_packet_t *mgmt = (const kbd_radio_mgmt_packet_t *)frame->payload;
+                    if (s_mgmt_callback && mgmt->transaction == s_mgmt_transaction) {
+                        if (!KBD_RadioMgmt_Validate(mgmt, (uint8_t)frame->header.length) ||
+                            mgmt->command != s_mgmt_command || mgmt->sub != s_mgmt_sub ||
+                            mgmt->fragments == 0u ||
+                            (s_mgmt_fragments != 0u && mgmt->fragments != s_mgmt_fragments) ||
+                            mgmt->fragment > s_mgmt_next_fragment ||
+                            (mgmt->fragment == s_mgmt_next_fragment &&
+                             (uint16_t)s_mgmt_length + mgmt->length > sizeof(s_mgmt_buffer))) {
+                            /* A matching but malformed response must fail the
+                             * current transaction immediately; otherwise the
+                             * browser waits for the full timeout and retries
+                             * the same stale request. */
+                            receiver_radio_mgmt_response_cb_t callback = s_mgmt_callback;
+                            Receiver_Log_Event(RX_LOG_MGMT_RX_FRAGMENT_ERR, KBD_RECEIVER_STARTUP_STAGE,
+                                               mgmt->command);
+                            callback(s_mgmt_transaction, NULL, 0u, true);
+                            /* The callback may only report the error. Always
+                             * clear TX/RX/callback state as one transaction. */
+                            Receiver_Radio_ResetManagement();
+                        } else if (mgmt->fragment < s_mgmt_next_fragment) {
+                            /* Repeated RF copy of an accepted fragment: ACK it
+                             * again because the previous ACK may be what was lost. */
+                            s_mgmt_ack = (kbd_radio_mgmt_ack_t){ KBD_RADIO_MGMT_VERSION,
+                                mgmt->transaction, KBD_RADIO_FRAME_MGMT_RESPONSE, mgmt->fragment };
+                            s_mgmt_ack_pending = true;
+                        } else if (mgmt->fragment == s_mgmt_next_fragment) {
+                            if (mgmt->fragment == 0u) {
+                                s_mgmt_fragments = mgmt->fragments;
+                                s_mgmt_started = RTC_GetCycle32k();
+                                Receiver_Log_Event(RX_LOG_MGMT_RX_FIRST, KBD_RECEIVER_STARTUP_STAGE,
+                                                   mgmt->fragments);
+                            }
+                            memcpy(&s_mgmt_buffer[s_mgmt_length], mgmt->data, mgmt->length);
+                            s_mgmt_ack = (kbd_radio_mgmt_ack_t){ KBD_RADIO_MGMT_VERSION,
+                                mgmt->transaction, KBD_RADIO_FRAME_MGMT_RESPONSE, mgmt->fragment };
+                            s_mgmt_ack_pending = true;
+                            s_mgmt_length += mgmt->length;
+                            s_mgmt_next_fragment++;
+                            Receiver_Log_Event(RX_LOG_MGMT_RX_FRAGMENT, KBD_RECEIVER_STARTUP_STAGE,
+                                               mgmt->fragment);
+                            if (s_mgmt_next_fragment == s_mgmt_fragments && s_mgmt_callback) {
+                                receiver_radio_mgmt_response_cb_t callback = s_mgmt_callback;
+                                Receiver_Log_Event(RX_LOG_MGMT_RX_COMPLETE, KBD_RECEIVER_STARTUP_STAGE,
+                                                   /* The completed response starts with the tunneled
+                                                    * command/sub/len header. Record the keyboard's
+                                                    * actual response status byte so LOG_GET proves
+                                                    * command execution, not merely RF reception. */
+                                                   (s_mgmt_length >= 4u) ? s_mgmt_buffer[3] : 0xFFu);
+                                s_mgmt_callback = NULL;
+                                callback(s_mgmt_transaction, s_mgmt_buffer, (uint8_t)s_mgmt_length,
+                                         (mgmt->flags & KBD_RADIO_MGMT_FLAG_ERROR) != 0);
+                            }
+                        }
+                    }
+                } else if (frame->header.type == KBD_RADIO_FRAME_CAPABILITY && frame->header.length == 8u) {
+                    if (frame->payload[0] == 1u) {
+                        memcpy(s_remote_capabilities, frame->payload, sizeof(s_remote_capabilities));
+                        s_remote_capabilities_valid = true;
+                    }
+                } else if (frame->header.type == KBD_RADIO_FRAME_MGMT_ACK &&
+                           frame->header.length == sizeof(kbd_radio_mgmt_ack_t)) {
+                    const kbd_radio_mgmt_ack_t *ack = (const kbd_radio_mgmt_ack_t *)frame->payload;
+                    if (ack->version == KBD_RADIO_MGMT_VERSION && s_mgmt_tx.active &&
+                        ack->transaction == s_mgmt_tx.transaction &&
+                        ack->frame_type == KBD_RADIO_FRAME_MGMT_REQUEST &&
+                        ack->fragment == s_mgmt_tx.fragment) {
+                        s_mgmt_tx.waiting_ack = false;
+                        s_mgmt_tx.repeat = 0u;
+                        s_mgmt_tx.last_send = 0u;
+                        if (++s_mgmt_tx.fragment >= s_mgmt_tx.fragments) s_mgmt_tx.active = false;
+                    }
+                } else if (frame->header.type == KBD_RADIO_FRAME_KEYBOARD && frame->header.length == 8u) {
+                    if (s_keyboard_rx_count != 0xFFFFu) s_keyboard_rx_count++;
+                    if (g_USB_DeviceState == USB_STATE_CONFIGURED &&
+                        USB_Keyboard_TrySend((const USB_KeyboardReport_t *)frame->payload)) {
+                        if (s_keyboard_usb_sent_count != 0xFFFFu) s_keyboard_usb_sent_count++;
+                    } else {
+                        if (g_USB_DeviceState == USB_STATE_CONFIGURED &&
+                            s_keyboard_usb_busy_count != 0xFFFFu) s_keyboard_usb_busy_count++;
+                        keyboard_enqueue((const USB_KeyboardReport_t *)frame->payload);
+                    }
                 } else if (frame->header.type == KBD_RADIO_FRAME_MOUSE && frame->header.length == 4u) {
-                    mouse_enqueue((const USB_MouseReport_t *)frame->payload);
+                    if (g_USB_DeviceState != USB_STATE_CONFIGURED ||
+                        !USB_Mouse_TrySend((const USB_MouseReport_t *)frame->payload))
+                        mouse_enqueue((const USB_MouseReport_t *)frame->payload);
                 } else if (frame->header.type == KBD_RADIO_FRAME_CONSUMER && frame->header.length == 2u) {
-                    consumer_enqueue((const USB_ConsumerReport_t *)frame->payload);
+                    if (g_USB_DeviceState != USB_STATE_CONFIGURED ||
+                        !USB_Consumer_TrySend((const USB_ConsumerReport_t *)frame->payload))
+                        consumer_enqueue((const USB_ConsumerReport_t *)frame->payload);
                 }
                 if (s_state != KBD_RADIO_PAIR_CONNECTED) {
                     Receiver_Log_Event(RX_LOG_RF_FRAME_OK, KBD_RECEIVER_STARTUP_STAGE,
@@ -499,10 +646,14 @@ static void flush_usb_reports(uint32_t now)
     if (s_usb_poll_phase < 32768u) return;
     s_usb_poll_phase %= 32768u;
 
-    if (s_keyboard_queue.count != 0u &&
-        USB_Keyboard_TrySend(&s_keyboard_queue.items[s_keyboard_queue.head])) {
-        s_keyboard_queue.head = (uint8_t)((s_keyboard_queue.head + 1u) % RX_REPORT_QUEUE_DEPTH);
-        s_keyboard_queue.count--;
+    if (s_keyboard_queue.count != 0u) {
+        if (USB_Keyboard_TrySend(&s_keyboard_queue.items[s_keyboard_queue.head])) {
+            s_keyboard_queue.head = (uint8_t)((s_keyboard_queue.head + 1u) % RX_REPORT_QUEUE_DEPTH);
+            s_keyboard_queue.count--;
+            if (s_keyboard_usb_sent_count != 0xFFFFu) s_keyboard_usb_sent_count++;
+        } else if (s_keyboard_usb_busy_count != 0xFFFFu) {
+            s_keyboard_usb_busy_count++;
+        }
     }
     if (s_mouse_queue.count != 0u && USB_Mouse_TrySend(&s_mouse_queue.items[s_mouse_queue.head])) {
         s_mouse_queue.head = (uint8_t)((s_mouse_queue.head + 1u) % RX_REPORT_QUEUE_DEPTH);
@@ -716,6 +867,8 @@ void Receiver_Radio_RfLibraryInit(void)
 {
     load_nv();
     GetMACAddress(s_local);
+    s_session = RTC_GetCycle32k() ^ ((uint32_t)s_local[2] << 24) ^ ((uint32_t)s_local[3] << 16) ^ ((uint32_t)s_local[4] << 8) ^ s_local[5];
+    if (!s_session) s_session = 1u;
     s_last_usb_report = RTC_GetCycle32k();
     s_host_startup_state = 0u;
     s_host_startup_result = 0u;
@@ -757,7 +910,61 @@ void Receiver_Radio_Process(void)
      * RFBound_StartHost succeeds.  Keep the manual diagnostic boot path
      * identical to the validated stage-2 path until pairing is requested. */
     if (!s_host_active) return;
+    /* Consume responses before scheduling more TX. A completed response may
+     * arm an ACK which must be sent before the browser's next request. */
     if (s_rx_pending || (pDMARxGet->Status & STA_DMA_ENABLE) == 0u) process_rf_rx();
+    bool mgmt_ack_submitted = false;
+    if (s_mgmt_ack_pending) {
+        kbd_radio_frame_t radio;
+        uint16_t rl = KBD_RadioProtocol_Encode(&radio, KBD_RADIO_FRAME_MGMT_ACK,
+            s_session, ++s_sequence, (const uint8_t *)&s_mgmt_ack, sizeof(s_mgmt_ack));
+        if (rl && rl <= 64u && receiver_rf_enqueue((const uint8_t *)&radio, (uint8_t)rl) == 0) {
+            s_mgmt_ack_pending = false;
+            mgmt_ack_submitted = true;
+        }
+    }
+    /* RFBound reports BOUND while it is between application packets.  A
+     * saved peer is still a valid target, so management must not be aborted
+     * merely because no ordinary HID frame has arrived recently. */
+    if (s_mgmt_callback && rtc_elapsed(RTC_GetCycle32k(), s_mgmt_started) >= RX_MGMT_TIMEOUT_TICKS) {
+        receiver_radio_mgmt_response_cb_t callback = s_mgmt_callback;
+        Receiver_Log_Event(RX_LOG_MGMT_TIMEOUT, KBD_RECEIVER_STARTUP_STAGE,
+                           s_mgmt_command);
+        callback(s_mgmt_transaction, NULL, 0u, true);
+        Receiver_Radio_ResetManagement();
+    }
+    /* Never let a repeated request starve the ACK for the previous response.
+     * The keyboard keeps that response transaction active until this ACK and
+     * intentionally defers execution of a newer command meanwhile. */
+    if (s_mgmt_tx.active && !s_mgmt_ack_pending && !mgmt_ack_submitted) {
+        uint32_t tx_now = RTC_GetCycle32k();
+        if (s_mgmt_tx.waiting_ack && s_mgmt_tx.repeat >= RX_MGMT_TX_REPEATS)
+            goto management_tx_done;
+        if (s_mgmt_tx.last_send != 0u &&
+            rtc_elapsed(tx_now, s_mgmt_tx.last_send) < RX_MGMT_TX_GAP_TICKS) goto management_tx_done;
+        uint8_t off = (uint8_t)(s_mgmt_tx.fragment * KBD_RADIO_MGMT_MAX_DATA);
+        uint8_t part = (uint8_t)((s_mgmt_tx.length - off) > KBD_RADIO_MGMT_MAX_DATA ? KBD_RADIO_MGMT_MAX_DATA : s_mgmt_tx.length - off);
+        kbd_radio_mgmt_packet_t mgmt;
+        uint8_t flags = (s_mgmt_tx.fragment == 0u ? KBD_RADIO_MGMT_FLAG_FIRST : 0u) | (s_mgmt_tx.fragment + 1u == s_mgmt_tx.fragments ? KBD_RADIO_MGMT_FLAG_LAST : 0u);
+        uint8_t ml = KBD_RadioMgmt_Encode(&mgmt, s_mgmt_tx.transaction, s_mgmt_tx.frame[0], s_mgmt_tx.frame[1], s_mgmt_tx.fragment, s_mgmt_tx.fragments, flags, s_mgmt_tx.frame + off, part);
+        kbd_radio_frame_t radio;
+        uint16_t rl = KBD_RadioProtocol_Encode(&radio, KBD_RADIO_FRAME_MGMT_REQUEST, s_session, ++s_sequence, (const uint8_t *)&mgmt, ml);
+        /* Management traffic is serialized above, so only the descriptor we
+         * are about to fill must be free.  Requiring the successor to be
+         * free as well can deadlock when RFBound keeps a look-ahead
+         * descriptor armed for acknowledgements, leaving the request queued
+         * forever and making the browser time out. */
+        if (rl && rl <= 64u && receiver_rf_enqueue((const uint8_t *)&radio, (uint8_t)rl) == 0) {
+            Receiver_Log_Event(RX_LOG_MGMT_TX_SUBMITTED, KBD_RECEIVER_STARTUP_STAGE, s_mgmt_tx.frame[0]);
+            s_mgmt_tx.last_send = tx_now;
+            s_mgmt_tx.waiting_ack = true;
+            s_mgmt_tx.repeat++;
+        } else if (s_mgmt_tx.active && (pDMATxGet->Status & STA_DMA_ENABLE)) {
+            Receiver_Log_Event(RX_LOG_MGMT_SEND_BUSY, KBD_RECEIVER_STARTUP_STAGE,
+                               s_mgmt_tx.fragment);
+        }
+    }
+management_tx_done:
     uint32_t now = RTC_GetCycle32k();
     if (s_link_lost_log_pending) {
         s_link_lost_log_pending = false;
@@ -825,6 +1032,98 @@ int Receiver_Radio_SetPollRate(uint16_t rate)
 {
     if (!valid_poll_rate(rate)) return -1;
     return request_control(RX_CONTROL_POLL_RATE, rate);
+}
+
+void Receiver_Radio_SetManagementResponseCallback(receiver_radio_mgmt_response_cb_t callback) { s_mgmt_callback = callback; }
+void Receiver_Radio_ResetManagement(void)
+{
+    s_mgmt_callback = NULL;
+    memset(&s_mgmt_tx, 0, sizeof(s_mgmt_tx));
+    memset(s_mgmt_buffer, 0, sizeof(s_mgmt_buffer));
+    s_mgmt_transaction = 0u;
+    s_mgmt_fragments = 0u;
+    s_mgmt_next_fragment = 0u;
+    s_mgmt_length = 0u;
+    s_mgmt_started = 0u;
+    s_mgmt_command = 0u;
+    s_mgmt_sub = 0u;
+}
+bool Receiver_Radio_HasRemoteCapabilities(void) { return s_remote_capabilities_valid; }
+void Receiver_Radio_GetRemoteCapabilities(uint8_t out[8])
+{
+    if (!out) return;
+    if (s_remote_capabilities_valid) memcpy(out, s_remote_capabilities, 8u);
+    else memset(out, 0, 8u);
+}
+bool Receiver_Radio_ManagementBusy(void)
+{
+    return s_mgmt_callback != NULL || s_mgmt_tx.active;
+}
+void Receiver_Radio_GetManagementDiagnostics(uint8_t out[7])
+{
+    if (!out) return;
+    out[0] = (s_mgmt_callback ? 0x01u : 0u) |
+             (s_mgmt_tx.active ? 0x02u : 0u) |
+             (s_mgmt_fragments ? 0x04u : 0u);
+    out[1] = s_mgmt_transaction;
+    out[2] = s_mgmt_command;
+    out[3] = s_mgmt_tx.fragment;
+    out[4] = s_mgmt_tx.fragments;
+    out[5] = s_mgmt_next_fragment;
+    out[6] = s_mgmt_fragments;
+}
+void Receiver_Radio_GetHidDiagnostics(uint8_t out[9])
+{
+    if (!out) return;
+    out[0] = (uint8_t)s_valid_frame_count;
+    out[1] = (uint8_t)(s_valid_frame_count >> 8);
+    out[2] = (uint8_t)s_keyboard_rx_count;
+    out[3] = (uint8_t)(s_keyboard_rx_count >> 8);
+    out[4] = (uint8_t)s_keyboard_usb_sent_count;
+    out[5] = (uint8_t)(s_keyboard_usb_sent_count >> 8);
+    out[6] = (uint8_t)s_keyboard_usb_busy_count;
+    out[7] = (uint8_t)(s_keyboard_usb_busy_count >> 8);
+    out[8] = s_rx_quarantine ? 1u : 0u;
+}
+int Receiver_Radio_SendManagement(const kbd_cmd_frame_t *command, uint8_t transaction)
+{
+    /* The RF host can be in BOUND between application packets while the
+     * paired keyboard is still reachable.  Queue the request whenever a
+     * valid peer exists; the normal management timeout handles a genuinely
+     * unavailable link. */
+    if (!command || !s_host_active || !has_peer() || command->len > 61u) return -1;
+    /* Self-heal a transaction whose callback or DMA state survived a lost
+     * RF response. The normal Process() timeout performs the same cleanup,
+     * but doing it here guarantees the next USB command can recover even if
+     * the timeout was observed between main-loop iterations. */
+    if ((s_mgmt_callback || s_mgmt_tx.active) &&
+        rtc_elapsed(RTC_GetCycle32k(), s_mgmt_started) >= RX_MGMT_TIMEOUT_TICKS) {
+        Receiver_Radio_ResetManagement();
+    }
+    uint8_t total = (uint8_t)((command->len + 3u + KBD_RADIO_MGMT_MAX_DATA - 1u) / KBD_RADIO_MGMT_MAX_DATA); if (!total) total = 1;
+    uint8_t raw[64] = { command->cmd, command->sub, command->len }; memcpy(&raw[3], command->data, command->len);
+    /* The caller installs the response callback immediately before queuing
+     * the first request fragment.  Its presence is therefore expected here;
+     * only an already active TX transaction can reject a new request. */
+    if (s_mgmt_tx.active) return -1;
+    memcpy(s_mgmt_tx.frame, raw, command->len + 3u);
+    s_mgmt_tx.length = (uint8_t)(command->len + 3u);
+    s_mgmt_tx.transaction = transaction;
+    s_mgmt_transaction = transaction;
+    s_mgmt_tx.fragment = 0u;
+    s_mgmt_tx.fragments = total;
+    s_mgmt_tx.repeat = 0u;
+    s_mgmt_tx.last_send = 0u;
+    s_mgmt_command = command->cmd;
+    s_mgmt_sub = command->sub;
+    s_mgmt_length = 0u;
+    s_mgmt_next_fragment = 0u;
+    s_mgmt_fragments = 0u;
+    s_mgmt_started = RTC_GetCycle32k();
+    s_mgmt_tx.active = true;
+    Receiver_Log_Event(RX_LOG_MGMT_TX_QUEUED, KBD_RECEIVER_STARTUP_STAGE,
+                       command->cmd);
+    return 0;
 }
 
 bool Receiver_Radio_TakeControlResult(int *result)

@@ -132,7 +132,17 @@ const keyboardSectionStyle = computed(() => {
 
 const currentKeyboardType = computed(() => {
   if (previewKeyboardType.value >= 0) return previewKeyboardType.value;
-  return deviceStore.deviceInfo?.keyboardType ?? 0;
+  if (deviceStore.remoteTargetLoaded && deviceStore.remoteDeviceInfo) {
+    return deviceStore.remoteDeviceInfo.keyboardType;
+  }
+  const reported = deviceStore.deviceInfo?.keyboardType;
+  if (!deviceStore.remoteTargetLoaded || deviceStore.remoteLayoutKnown) return reported ?? 0;
+  // Keep the original layouts while probing an older keyboard.  Once a
+  // keymap has arrived its slot count is a better fallback than inventing a
+  // new generic layout; RADIO_REMOTE_CAPS can replace this with the exact
+  // five-key/knob type asynchronously.
+  const slots = deviceStore.currentLayerKeys.length;
+  return slots >= 5 || deviceStore.keymap.numLayers >= 5 ? KeyboardType.FIVE_KEYS : (reported ?? KeyboardType.BASIC);
 });
 
 const currentUiDefinition = computed(() => {
@@ -159,7 +169,10 @@ const showConfigLibrary = computed(() => previewKeyboardType.value < 0);
 const showResetButton = computed(() => previewKeyboardType.value < 0 && deviceStore.supportsFactoryReset);
 const showLayerBadge = computed(() => previewKeyboardType.value >= 0 || deviceStore.supportsMultiLayer);
 const isReceiver = computed(
-  () => previewKeyboardType.value < 0 && deviceStore.capabilities.receiverRole,
+  () => previewKeyboardType.value < 0 && deviceStore.capabilities.receiverRole && !deviceStore.remoteTargetReady,
+);
+const isReceiverOnly = computed(
+  () => previewKeyboardType.value < 0 && deviceStore.isReceiverOnly,
 );
 const showStormDataFlashPanel = computed(
   () =>
@@ -272,10 +285,10 @@ function onCatAction(action: string) {
         <StormDataFlashEntry v-if="showStormDataFlashPanel" @open="dataFlashVisible = true" />
       </aside>
 
-      <div v-if="!isReceiver" class="keyboard-spacer"></div>
+      <div v-if="!isReceiverOnly" class="keyboard-spacer"></div>
 
       <!-- 中央键盘区 -->
-      <section v-if="!isReceiver" class="keyboard-section" :style="keyboardSectionStyle">
+      <section v-if="!isReceiverOnly" class="keyboard-section" :style="keyboardSectionStyle">
         <KeyboardDecoration />
 
         <!-- 猫咪主题猫耳（独立浮层，不侵入键盘组件） -->
@@ -296,7 +309,7 @@ function onCatAction(action: string) {
                 <button
                   type="button"
                   class="keyboard-action-btn save"
-                  :disabled="!deviceStore.hasChanges"
+                  :disabled="!deviceStore.canSaveKeymap"
                   :title="saveKeymapLabel"
                   @click="saveConfig"
                 >
@@ -306,7 +319,7 @@ function onCatAction(action: string) {
                 <button
                   type="button"
                   class="keyboard-action-btn"
-                  :disabled="!deviceStore.hasChanges"
+                  :disabled="!deviceStore.keymapLoaded || !deviceStore.hasChanges"
                   title="放弃更改"
                   @click="discardChanges"
                 >
@@ -317,6 +330,9 @@ function onCatAction(action: string) {
             </div>
           </div>
           <div class="keyboard-container">
+            <div v-if="previewKeyboardType < 0 && !deviceStore.keymapLoaded" class="keymap-read-warning">
+              按键配置尚未成功读取。可点击刷新重试；为保护现有配置，读取成功前不会写入设备。
+            </div>
             <KeyboardLayout :keyboard-type="currentKeyboardType" :keys="currentLayerKeysForDisplay"
               :selected-index="selectedKeyIndex" :disabled="previewKeyboardType >= 0"
               @select="onKeySelect" />
@@ -371,6 +387,17 @@ function onCatAction(action: string) {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+.keymap-read-warning {
+  margin: 0.75rem 1rem 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--c-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #f59e0b 10%, var(--c-bg-primary));
+  color: var(--c-text-primary);
+  font-size: 0.75rem;
+  line-height: 1.45;
 }
 
 .app-main {

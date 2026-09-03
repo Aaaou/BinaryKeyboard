@@ -420,7 +420,11 @@ static void battery_finish_sample(void)
     }
     else
     {
-      sample_valid = FALSE;
+      /* A charger can change the cell voltage while the previous sample is
+       * cached.  Do not silently keep returning that stale sample when the
+       * confirmation conversion differs; accept the fresh in-range reading
+       * and restart the voltage filter instead. */
+      reset_filter = TRUE;
     }
   }
 
@@ -529,6 +533,24 @@ void KBD_Battery_RequestRefresh(void)
   battery_start_sample();
 }
 
+void KBD_Battery_EnsureSample(void)
+{
+  /* A BATTERY query is the explicit refresh point for the RF management
+   * tunnel. Always take a fresh sample so charging voltage changes are not
+   * hidden behind the previous cached reading. */
+  if (!s_sample_pending) battery_start_sample();
+  if (s_sample_pending) {
+    mDelaymS(BAT_SETTLE_MS + 2u);
+    battery_finish_sample();
+  }
+#if KBD_HAS_CHARGE_DET
+  /* The RF management request can arrive without the TMOS charge event
+   * having run (especially in RF-only builds). Keep the same debounce
+   * algorithm as BLE, but advance it from the authoritative query path. */
+  battery_poll_charge_state();
+#endif
+}
+
 uint16_t KBD_Battery_GetVoltage_mV(void)
 {
   if (!s_cache_ready && !s_sample_pending)
@@ -570,7 +592,14 @@ uint8_t KBD_Battery_GetChargePinRaw(void)
 
 kbd_charge_state_t KBD_Battery_GetChargeState(void)
 {
+#if KBD_HAS_CHARGE_DET
+  /* The management protocol and BLE terminal expose the instantaneous CHRG
+   * pin state.  The debounced state is still maintained for LED/level logic,
+   * but must not make a live low level appear as "not charging" for seconds. */
+  return KBD_Battery_GetChargePinRaw() ? BAT_CHG_NONE : BAT_CHG_CHARGING;
+#else
   return s_charge_state;
+#endif
 }
 
 uint8_t KBD_Battery_GetVoltage_dV(void)

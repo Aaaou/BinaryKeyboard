@@ -45,3 +45,43 @@ bool KBD_RadioProtocol_Validate(const kbd_radio_frame_t *frame, uint16_t frame_l
     memcpy(&received_crc, (const uint8_t *)frame + crc_offset, sizeof(received_crc));
     return KBD_RadioProtocol_Crc16((const uint8_t *)frame, crc_offset) == received_crc;
 }
+
+uint8_t KBD_RadioMgmt_Encode(kbd_radio_mgmt_packet_t *packet,
+                             uint8_t transaction, uint8_t command, uint8_t sub,
+                             uint8_t fragment, uint8_t fragments, uint8_t flags,
+                             const uint8_t *data, uint8_t length)
+{
+    if (!packet || fragments == 0u || fragment >= fragments ||
+        length > KBD_RADIO_MGMT_MAX_DATA) return 0u;
+    memset(packet, 0, sizeof(*packet));
+    packet->version = KBD_RADIO_MGMT_VERSION;
+    packet->transaction = transaction;
+    packet->command = command;
+    packet->sub = sub;
+    packet->fragment = fragment;
+    packet->fragments = fragments;
+    packet->length = length;
+    packet->flags = flags;
+    if (data && length) memcpy(packet->data, data, length);
+    return (uint8_t)(8u + length);
+}
+
+bool KBD_RadioMgmt_Validate(const kbd_radio_mgmt_packet_t *packet, uint8_t length)
+{
+    if (!packet || length < 8u || length > (uint8_t)sizeof(*packet)) return false;
+    if (packet->version != KBD_RADIO_MGMT_VERSION || packet->fragments == 0u ||
+        packet->fragment >= packet->fragments ||
+        packet->length > KBD_RADIO_MGMT_MAX_DATA ||
+        packet->length != (uint8_t)(length - 8u)) return false;
+    /* FIRST/LAST are structural flags, not hints.  Reject both missing and
+     * misplaced flags so a malformed fragment cannot reserve a transaction
+     * indefinitely on either endpoint. */
+    const uint8_t first = (packet->fragment == 0u) ? KBD_RADIO_MGMT_FLAG_FIRST : 0u;
+    const uint8_t last = (packet->fragment + 1u == packet->fragments) ? KBD_RADIO_MGMT_FLAG_LAST : 0u;
+    if ((packet->flags & (KBD_RADIO_MGMT_FLAG_FIRST | KBD_RADIO_MGMT_FLAG_LAST)) !=
+        (first | last)) return false;
+    if ((packet->flags & (uint8_t)~(KBD_RADIO_MGMT_FLAG_FIRST |
+                                    KBD_RADIO_MGMT_FLAG_LAST |
+                                    KBD_RADIO_MGMT_FLAG_ERROR)) != 0u) return false;
+    return true;
+}

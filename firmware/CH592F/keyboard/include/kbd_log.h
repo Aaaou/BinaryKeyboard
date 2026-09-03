@@ -103,6 +103,9 @@ void KBD_Log_RgbEvent(uint8_t mode, uint8_t brightness);
  */
 void KBD_Log_SystemEvent(uint8_t event);
 
+/** 记录 2.4G 管理透传事件: data=[event, command, result]. */
+void KBD_Log_RadioMgmtEvent(uint8_t event, uint8_t command, uint8_t result);
+
 #ifdef __cplusplus
 }
 #endif
