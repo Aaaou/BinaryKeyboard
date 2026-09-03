@@ -238,17 +238,11 @@ def artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
 
 
 def user_facing_artifact_paths(build_dir: Path, keyboard: str) -> dict[str, Path]:
-    """Only the artifacts that matter to the user (for build-full output)."""
+    """Only complete ISP images shown by the build-full command."""
     a = artifact_paths(build_dir, keyboard)
-    if keyboard == "RECEIVER":
-        return {"full_hex": a["full_hex"], "full_bin": a["full_bin"]}
     return {
         "full_hex": a["full_hex"],
         "full_bin": a["full_bin"],
-        "iap_hex": a["iap_hex"],
-        "iap_bin": a["iap_bin"],
-        "app_bin": a["bin"],
-        "app_hex": a["hex"],
     }
 
 
@@ -447,7 +441,7 @@ def configure(keyboard: str, profile: str) -> Path:
     return build_dir
 
 
-def build(keyboard: str, profile: str) -> Path:
+def build(keyboard: str, profile: str, show_artifacts: bool = True) -> Path:
     cmake = find_cmake()
     if not cmake:
         die("CMake not found. Install CMake or add it to PATH.")
@@ -473,12 +467,15 @@ def build(keyboard: str, profile: str) -> Path:
     _build_report(lines, preset_for(keyboard, profile), build_dir, elapsed)
 
     export_named_artifacts(build_dir, keyboard)
-    # Only show .hex and .bin (user-facing app artifacts)
-    arts = artifact_paths(build_dir, keyboard)
-    for key in ("hex", "bin"):
-        path = arts[key]
-        if path.is_file():
-            ok(f"APP {key.upper()} → {path.parent}{os.sep}{_c('32;1', path.name)}")
+    if show_artifacts:
+        # A direct app build is a developer operation, so expose its two
+        # useful outputs. build-full suppresses these intermediate paths and
+        # prints only complete ISP images after merging.
+        arts = artifact_paths(build_dir, keyboard)
+        for key in ("hex", "bin"):
+            path = arts[key]
+            if path.is_file():
+                ok(f"APP {key.upper()} → {path.parent}{os.sep}{_c('32;1', path.name)}")
 
     return build_dir
 
@@ -888,7 +885,7 @@ def build_full(keyboard: str, profile: str, build_number: int | None = None) -> 
         app_build_dir / "generated" / "bk_version_config.h",
         build_number,
     )
-    app_build_dir = build(keyboard, profile)
+    app_build_dir = build(keyboard, profile, show_artifacts=False)
 
     # 3. Merge hex
     jump_hex = jumpiap_hex_path(immutable=receiver_immutable)
@@ -923,14 +920,10 @@ def build_full(keyboard: str, profile: str, build_number: int | None = None) -> 
     # 6. Print user-facing artifacts
     sep()
     info("Build artifacts:")
-    labels = [("FULL HEX (ISP)", "full_hex"), ("FULL BIN (ISP)", "full_bin")]
-    if not receiver_immutable:
-        labels += [("IAP HEX", "iap_hex"), ("IAP BIN", "iap_bin"),
-                   ("APP HEX (OTA)", "hex"), ("APP BIN (OTA)", "bin")]
-    for label, key in labels:
-        path = arts[key]
+    labels = {"full_hex": "FULL HEX (ISP)", "full_bin": "FULL BIN (ISP)"}
+    for key, path in user_facing_artifact_paths(app_build_dir, keyboard).items():
         if path.is_file():
-            ok(f"{label:16s} → {_c('32;1', path.name)}  ({path.stat().st_size:,} B)")
+            ok(f"{labels[key]:16s} → {_c('32;1', path.name)}  ({path.stat().st_size:,} B)")
 
     return app_build_dir
 
