@@ -123,14 +123,6 @@ int main(void)
         }
     }
 
-    /* DEEP wake is a cold BLE reconnect. Consume all wake/reconnect input and
-     * synchronize an empty HID state before accepting fresh key presses. */
-    if (deep_wake_marker == KBD_DEEP_WAKE_RESET_MARKER)
-    {
-        Key_BeginDeepWakeRecovery(deep_wake_gpioa_flags,
-                                  deep_wake_gpiob_flags);
-    }
-
     /* 读取上次模式，决定本次启动路径 */
     uint8_t last_mode = KBD_GetLastMode();
     kbd_work_mode_t initial_mode = (last_mode <= KBD_WORK_MODE_2G4)
@@ -138,6 +130,22 @@ int main(void)
 #if KBD_RADIO_2G4_ENABLED
     initial_mode = KBD_WORK_MODE_2G4;
 #endif
+
+    /* DEEP wake is a cold transport reconnect. Only 2.4G may replay one
+     * normal wake key, and only after the RF link is confirmed and the empty
+     * HID state has been synchronized. BLE keeps its established wake-only
+     * behavior. */
+    if (deep_wake_marker == KBD_DEEP_WAKE_RESET_MARKER)
+    {
+        const kbd_system_config_t *sys = KBD_GetSystemConfig();
+        uint8_t replay_2g4 =
+            (initial_mode == KBD_WORK_MODE_2G4 &&
+             sys->deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_DISABLED)
+                ? 1u : 0u;
+        Key_BeginDeepWakeRecovery(deep_wake_gpioa_flags,
+                                  deep_wake_gpiob_flags,
+                                  replay_2g4);
+    }
 
     /*
      * 按 WCH Application 示例思路：每种模式只初始化对应协议栈

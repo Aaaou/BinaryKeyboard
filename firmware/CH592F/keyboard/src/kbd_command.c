@@ -580,7 +580,7 @@ static void HandleRgbGet(const kbd_cmd_frame_t *frame)
   kbd_rgb_config_t *rgb = KBD_GetRgbConfig();
   kbd_system_config_t *sys = KBD_GetSystemConfig();
 
-  uint8_t resp[14];
+  uint8_t resp[15];
   resp[0] = KBD_RESP_OK;
   resp[1] = rgb->enabled;
   resp[2] = rgb->mode;
@@ -595,8 +595,10 @@ static void HandleRgbGet(const kbd_cmd_frame_t *frame)
   resp[11] = sys->auto_sleep_min;
   resp[12] = sys->deep_sleep_min;
   resp[13] = (sys->seamless_wake != KBD_SEAMLESS_WAKE_DISABLED) ? 1u : 0u;
+  resp[14] =
+      (sys->deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_DISABLED) ? 1u : 0u;
 
-  KBD_Command_SendResponse(KBD_CMD_RGB_GET, 0, resp, 14);
+  KBD_Command_SendResponse(KBD_CMD_RGB_GET, 0, resp, 15);
 }
 
 /**
@@ -643,6 +645,12 @@ static void HandleRgbSet(const kbd_cmd_frame_t *frame)
     sys->seamless_wake = frame->data[12]
                              ? KBD_SEAMLESS_WAKE_ENABLED
                              : KBD_SEAMLESS_WAKE_DISABLED;
+  }
+  if (frame->len >= 14u)
+  {
+    sys->deep_seamless_wake_2g4 = frame->data[13]
+                                          ? KBD_SEAMLESS_WAKE_ENABLED
+                                          : KBD_SEAMLESS_WAKE_DISABLED;
   }
 
   KBD_RGB_SetMode((kbd_rgb_mode_t)rgb->mode);

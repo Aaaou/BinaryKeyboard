@@ -221,8 +221,16 @@ static volatile uint8_t s_deep_wake_recovery_pending = 0;
 /** HID ready must remain stable briefly before accepting fresh input. */
 static volatile uint32_t s_deep_wake_ready_tick = 0;
 static volatile uint8_t s_deep_wake_sync_pending = 0;
+static volatile uint8_t s_deep_wake_replay_enabled = 0;
+static volatile uint8_t s_deep_wake_replay_scan_index = 0xFFu;
+static volatile uint32_t s_deep_wake_started_tick = 0;
+static volatile uint8_t s_deep_wake_release_repeats = 0;
+static volatile uint32_t s_deep_wake_release_due_tick = 0;
 
 #define DEEP_WAKE_HID_SETTLE_MS 200u
+#define DEEP_WAKE_2G4_RECONNECT_TIMEOUT_MS 8000u
+#define DEEP_WAKE_2G4_RELEASE_GAP_MS 10u
+#define DEEP_WAKE_2G4_RELEASE_REPEATS 3u
 
 /**
  * @brief FN 按键事件队列（环形缓冲）。
@@ -815,13 +823,47 @@ uint8_t FnKey_GetEvent(fnkey_event_t *evt)
     return 1;
 }
 
-void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags)
+void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
+                               uint8_t replay_normal_key)
 {
-    (void)gpioa_flags;
-    (void)gpiob_flags;
     s_deep_wake_recovery_pending = 1;
     s_deep_wake_ready_tick = 0;
     s_deep_wake_sync_pending = 0;
+    s_deep_wake_started_tick = GetTickMs();
+    s_deep_wake_replay_enabled = replay_normal_key ? 1u : 0u;
+    s_deep_wake_replay_scan_index = 0xFFu;
+    s_deep_wake_release_repeats = 0;
+    s_deep_wake_release_due_tick = 0;
+
+    if (replay_normal_key)
+    {
+        /* Shutdown wake flags are captured before Key_Init clears them. Pick
+         * one physical normal key deterministically; simultaneous wake keys
+         * are intentionally collapsed to one action to prevent duplicates. */
+        for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
+        {
+            uint32_t flags = (g_key_pins[i].port == GPIO_PORT_A)
+                                 ? gpioa_flags : gpiob_flags;
+            if ((flags & g_key_pins[i].pin) != 0u)
+            {
+                s_deep_wake_replay_scan_index = i;
+                break;
+            }
+        }
+        /* Some reset paths clear the latched flag before C startup. The key
+         * level sampled by Key_Init is a safe fallback while it is held. */
+        if (s_deep_wake_replay_scan_index == 0xFFu)
+        {
+            for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
+            {
+                if (s_key_ctx[i].is_down)
+                {
+                    s_deep_wake_replay_scan_index = i;
+                    break;
+                }
+            }
+        }
+    }
 
     for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
     {
@@ -841,6 +883,24 @@ void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags)
 
 void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
 {
+    if (s_deep_wake_release_repeats != 0u && transport_ready)
+    {
+        uint32_t now = GetTickMs();
+        if ((int32_t)(now - s_deep_wake_release_due_tick) >= 0)
+        {
+            PushKeyEvent(g_key_logical_ids[s_deep_wake_replay_scan_index],
+                         KEY_EVT_RELEASE, now);
+            s_deep_wake_release_repeats--;
+            s_deep_wake_release_due_tick =
+                now + DEEP_WAKE_2G4_RELEASE_GAP_MS;
+            if (s_deep_wake_release_repeats == 0u)
+            {
+                s_deep_wake_replay_scan_index = 0xFFu;
+                s_deep_wake_release_due_tick = 0u;
+            }
+        }
+    }
+
     if (!s_deep_wake_recovery_pending)
     {
         return;
@@ -849,6 +909,18 @@ void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
     if (!transport_ready)
     {
         s_deep_wake_ready_tick = 0;
+        if (s_deep_wake_replay_enabled &&
+            (uint32_t)(GetTickMs() - s_deep_wake_started_tick) >=
+                DEEP_WAKE_2G4_RECONNECT_TIMEOUT_MS)
+        {
+            /* Never retain a wake action indefinitely. If the receiver is
+             * absent, abandon replay and release the recovery gate so FN can
+             * still switch modes or perform local maintenance. */
+            s_deep_wake_replay_scan_index = 0xFFu;
+            s_deep_wake_replay_enabled = 0;
+            s_deep_wake_recovery_pending = 0;
+            s_deep_wake_started_tick = 0;
+        }
         return;
     }
 
@@ -880,6 +952,35 @@ uint8_t Key_IsDeepWakeSyncPending(void)
 void Key_FinishDeepWakeSync(void)
 {
     s_deep_wake_sync_pending = 0;
+    s_deep_wake_started_tick = 0;
+
+    if (s_deep_wake_replay_scan_index < KBD_SCAN_KEY_COUNT)
+    {
+        uint8_t i = s_deep_wake_replay_scan_index;
+        uint8_t logical_key = g_key_logical_ids[i];
+        uint32_t now = GetTickMs();
+
+        /* Recovery discarded every physical edge. Recreate exactly one press.
+         * If the key is still held, its real release completes the report;
+         * otherwise schedule repeated releases at RF-safe intervals. */
+        PFIC_DisableIRQ(GPIO_A_IRQn);
+        PFIC_DisableIRQ(GPIO_B_IRQn);
+        s_key_ctx[i].suppress_action = 0;
+        PushKeyEvent(logical_key, KEY_EVT_PRESS, now);
+        if (!s_key_ctx[i].is_down)
+        {
+            s_deep_wake_release_repeats = DEEP_WAKE_2G4_RELEASE_REPEATS;
+            s_deep_wake_release_due_tick =
+                now + DEEP_WAKE_2G4_RELEASE_GAP_MS;
+        }
+        else
+        {
+            s_deep_wake_replay_scan_index = 0xFFu;
+        }
+        PFIC_EnableIRQ(GPIO_A_IRQn);
+        PFIC_EnableIRQ(GPIO_B_IRQn);
+    }
+    s_deep_wake_replay_enabled = 0;
 }
 
 void FnKey_SetLongPressThreshold(uint8_t id, uint16_t threshold_ms)
@@ -944,6 +1045,11 @@ void Key_Init(void)
     s_deep_wake_recovery_pending = 0;
     s_deep_wake_ready_tick = 0;
     s_deep_wake_sync_pending = 0;
+    s_deep_wake_replay_enabled = 0;
+    s_deep_wake_replay_scan_index = 0xFFu;
+    s_deep_wake_started_tick = 0;
+    s_deep_wake_release_repeats = 0;
+    s_deep_wake_release_due_tick = 0;
 
     /* BOOT: input only. */
     ConfigPinInputPullup(&g_boot_pin);

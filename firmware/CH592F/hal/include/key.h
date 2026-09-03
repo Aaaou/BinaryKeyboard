@@ -203,9 +203,12 @@ uint8_t Key_GetEvent(key_event_t *evt);
 
 /**
  * @brief 开始 DEEP 唤醒恢复阶段。
- * @details 唤醒键和重连期间的输入只用于恢复连接，不会作为 HID 操作执行。
+ * @param replay_normal_key 非零时在安全 HID 同步完成后回放一个普通唤醒键
+ * @details 重连期间的输入不会直接执行。2.4G 可以选择在链路确认并同步全零
+ *          报告后，可靠回放一个用于唤醒的普通键；FN 和旋钮不会回放。
  */
-void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags);
+void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
+                               uint8_t replay_normal_key);
 
 /** @brief HID 恢复时结束深睡事件缓冲阶段。 */
 void Key_ServiceDeepWakeKeys(uint8_t transport_ready);
