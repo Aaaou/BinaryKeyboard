@@ -313,6 +313,12 @@ int KBD_Mode_Switch(kbd_work_mode_t mode)
     /* 保存目标模式到 DataFlash */
     KBD_SetLastMode(mode);
     KBD_Storage_FlushRuntime(); /* 立即落盘，确保复位前写入完成 */
+#if KBD_TRIMODE_ENABLED
+    if (KBD_Storage_WriteTrimodeSelector((uint8_t)mode) != 0) {
+        g_mode_switching = false;
+        return -5;
+    }
+#endif
 
     /* 等待 Flash 写入和外设稳定 */
     mDelaymS(10);

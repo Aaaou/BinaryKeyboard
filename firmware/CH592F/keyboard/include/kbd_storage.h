@@ -52,6 +52,7 @@ int KBD_Storage_Init(void);
  * @return 负数 擦写失败
  */
 int KBD_Storage_FlushRuntime(void);
+int KBD_Storage_WriteTrimodeSelector(uint8_t mode);
 
 /**
  * @brief 推迟 runtime 热数据写入（避免在 BLE 连接/配对窗口写 Flash）

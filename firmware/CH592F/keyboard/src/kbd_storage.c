@@ -28,6 +28,7 @@
 #include "ble_config.h"
 #include "debug.h"
 #include "kbd_config.h"
+#include "iap_config.h"
 #include <string.h>
 
 typedef char kbd_system_config_must_remain_64_bytes[
@@ -700,6 +701,22 @@ int KBD_Storage_FlushRuntime(void) {
   }
 
   return SaveRuntimeState();
+}
+
+int KBD_Storage_WriteTrimodeSelector(uint8_t mode) {
+#if KBD_TRIMODE_ENABLED
+  trimode_selector_t selector = {TRIMODE_SELECTOR_MAGIC, mode, (uint8_t)~mode,
+                                 TRIMODE_SELECTOR_TAIL};
+  trimode_selector_t verify = {0};
+  if (mode > 2u) return -1;
+  if (EEPROM_ERASE(TRIMODE_SELECTOR_DATAFLASH_ADD, EEPROM_PAGE_SIZE) != 0) return -2;
+  if (EEPROM_WRITE(TRIMODE_SELECTOR_DATAFLASH_ADD, &selector, sizeof(selector)) != 0) return -3;
+  if (EEPROM_READ(TRIMODE_SELECTOR_DATAFLASH_ADD, &verify, sizeof(verify)) != 0 ||
+      memcmp(&verify, &selector, sizeof(selector)) != 0) return -4;
+#else
+  (void)mode;
+#endif
+  return 0;
 }
 
 void KBD_Storage_PollStatus(kbd_storage_status_t *status) {

@@ -74,6 +74,13 @@
  */
 #define IAP_DATAFLASH_ADD       0x6000u
 
+#define TRIMODE_SELECTOR_DATAFLASH_ADD 0x5F00u
+#define TRIMODE_SELECTOR_MAGIC         0xA5u
+#define TRIMODE_SELECTOR_TAIL          0x5Au
+typedef struct __attribute__((packed)) {
+    uint8_t magic; uint8_t mode; uint8_t mode_inv; uint8_t tail;
+} trimode_selector_t;
+
 /*============================================================================*/
 /*                              Bootloader 常量                                */
 /*============================================================================*/
