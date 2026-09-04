@@ -17,6 +17,8 @@ SECTIONS
 		_sinit = .;
 		. = ALIGN(4);
 		KEEP(*(SORT_NONE(.init)))
+		KEEP(*(.ImageFlag))
+		KEEP(*(.ImageFlag.*))
 		. = ALIGN(4);
 		_einit = .;
 	} >FLASH AT>FLASH

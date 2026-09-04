@@ -24,18 +24,38 @@
 /*                            Flash 分区常量                                   */
 /*============================================================================*/
 
+/* 三模固件使用固定的 2.4G/BLE 分区；普通固件继续使用 A/B 分区。 */
+#if KBD_TRIMODE_ENABLED || KBD_TRIMODE_DISPATCHER
+#define IMAGE_2G4_START_ADD     0x01000u
+#define IMAGE_2G4_SIZE          (64u * 1024u)
+#define IMAGE_BLE_START_ADD     0x11000u
+#define IMAGE_BLE_SIZE          (184u * 1024u)
+#define IMAGE_B_START_ADD       0x3F000u
+#define IMAGE_B_SIZE            (184u * 1024u)
+#define IMAGE_FLAG_2G4          0x30de5820u
+#define IMAGE_FLAG_BLE          0x30de5821u
+#define IMAGE_SIZE              IMAGE_BLE_SIZE
+#else
 /** Image 大小: 216KB */
 #define IMAGE_SIZE              (216u * 1024u)
+#endif
 
 /** Image A: 当前运行的应用固件 */
 #define IMAGE_A_FLAG            0x01
+#if KBD_TRIMODE_ENABLED || KBD_TRIMODE_DISPATCHER
+#define IMAGE_A_START_ADD       IMAGE_2G4_START_ADD
+#define IMAGE_A_SIZE            IMAGE_2G4_SIZE
+#else
 #define IMAGE_A_START_ADD       0x01000u
 #define IMAGE_A_SIZE            IMAGE_SIZE
+#endif
 
 /** Image B: 新固件暂存区 */
 #define IMAGE_B_FLAG            0x02
+#if !(KBD_TRIMODE_ENABLED || KBD_TRIMODE_DISPATCHER)
 #define IMAGE_B_START_ADD       (IMAGE_A_START_ADD + IMAGE_A_SIZE)  /* 0x37000 */
 #define IMAGE_B_SIZE            IMAGE_SIZE
+#endif
 
 /** IAP 标志: 置此标志后重启，高地址 IAP 程序会执行 B→A 拷贝 */
 #define IMAGE_IAP_FLAG          0x03
