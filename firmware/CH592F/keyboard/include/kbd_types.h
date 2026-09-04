@@ -415,8 +415,7 @@ extern "C"
     uint8_t deep_sleep_min;  /**< DEEP 延时 (在 LIGHT 后, 分钟, 0=禁用) */
     uint8_t os_mode;         /**< 系统模式 (0=Win, 1=Mac) */
     uint8_t seamless_wake;   /**< LIGHT 唤醒首键透传，使用 KBD_SEAMLESS_WAKE_* 标记 */
-    uint8_t deep_seamless_wake_2g4; /**< 2.4G DEEP 重连后回放唤醒首键 */
-    uint8_t reserved[56];    /**< 保留字段 */
+    uint8_t reserved[57];    /**< 保留字段 */
   } kbd_system_config_t;
 
   typedef enum

@@ -35,23 +35,11 @@ describe('CH592 seamless wake RGB protocol extension', () => {
     expect(payload[12]).toBe(1);
   });
 
-  it('reads and writes the optional 2.4G DEEP wake byte', () => {
-    const codec = new Ch592Codec();
-    const config = codec.parseRgbConfig(rgbResponse(15, 1, 0));
-
-    expect(config.deepSeamlessWake2g4Enabled).toBe(false);
-    config.deepSeamlessWake2g4Enabled = true;
-    const payload = codec.buildSetRgbPayload(config);
-    expect(payload).toHaveLength(14);
-    expect(payload[13]).toBe(1);
-  });
-
   it('keeps the legacy 12-byte request for old firmware', () => {
     const codec = new Ch592Codec();
     const config = codec.parseRgbConfig(rgbResponse(13));
 
     expect(config.seamlessWakeEnabled).toBe(true);
-    expect(config.deepSeamlessWake2g4Enabled).toBeUndefined();
     config.seamlessWakeEnabled = false;
     expect(codec.buildSetRgbPayload(config)).toHaveLength(12);
   });

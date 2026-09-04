@@ -268,7 +268,6 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 | `11` | 1 | `auto_sleep_min` |
 | `12` | 1 | `deep_sleep_min` |
 | `13` | 1 | `seamless_wake`，LIGHT 首键正常执行 |
-| `14` | 1 | `deep_seamless_wake_2g4`，2.4G DEEP 重连后回放首键 |
 
 ### 9. `RGB_SET (0x31)`
 
@@ -289,7 +288,6 @@ BinaryKeyboard 无线版通过 USB HID 配置通道与 Studio（WebHID）通信�
 | `10` | 1 | `auto_sleep_min` | LIGHT 休眠分钟数；`0=禁用` |
 | `11` | 1 | `deep_sleep_min` | 进入 LIGHT 后到 DEEP 的分钟数；`0=禁用` |
 | `12` | 1 | `seamless_wake` | LIGHT 首键正常执行；旧固件可省略 |
-| `13` | 1 | `deep_seamless_wake_2g4` | 2.4G DEEP 重连后回放首键；旧固件可省略 |
 
 **响应**（`LEN=1`）：`DATA[0] = status`
 

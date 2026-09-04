@@ -64,13 +64,6 @@ int main(void)
     /* 设置系统时钟 */
     SetSysClock(CLK_SOURCE_PLL_60MHz);
 
-    /* Shutdown uses a software reset after GPIO wake. Capture the retained
-     * marker and latched GPIO source before peripheral initialization clears it. */
-    uint8_t deep_wake_marker = R8_GLOB_RESET_KEEP;
-    uint32_t deep_wake_gpioa_flags = GPIOA_ReadITFlagPort();
-    uint32_t deep_wake_gpiob_flags = GPIOB_ReadITFlagPort();
-    SYS_ResetKeepBuf(0u);
-
 #if (defined(HAL_SLEEP)) && (HAL_SLEEP == TRUE)
     /*
      * Match the WCH low-power examples: give every otherwise-unused digital
@@ -130,22 +123,6 @@ int main(void)
 #if KBD_RADIO_2G4_ENABLED
     initial_mode = KBD_WORK_MODE_2G4;
 #endif
-
-    /* DEEP wake is a cold transport reconnect. Only 2.4G may replay one
-     * normal wake key, and only after the RF link is confirmed and the empty
-     * HID state has been synchronized. BLE keeps its established wake-only
-     * behavior. */
-    if (deep_wake_marker == KBD_DEEP_WAKE_RESET_MARKER)
-    {
-        const kbd_system_config_t *sys = KBD_GetSystemConfig();
-        uint8_t replay_2g4 =
-            (initial_mode == KBD_WORK_MODE_2G4 &&
-             sys->deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_DISABLED)
-                ? 1u : 0u;
-        Key_BeginDeepWakeRecovery(deep_wake_gpioa_flags,
-                                  deep_wake_gpiob_flags,
-                                  replay_2g4);
-    }
 
     /*
      * 按 WCH Application 示例思路：每种模式只初始化对应协议栈

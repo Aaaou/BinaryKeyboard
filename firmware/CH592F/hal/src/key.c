@@ -217,21 +217,6 @@ static volatile uint8_t s_key_wr = 0;
 /** @brief 普通按键队列读指针。 */
 static volatile uint8_t s_key_rd = 0;
 /** DEEP 唤醒后等待安全 HID 同步的标志。 */
-static volatile uint8_t s_deep_wake_recovery_pending = 0;
-/** HID ready must remain stable briefly before accepting fresh input. */
-static volatile uint32_t s_deep_wake_ready_tick = 0;
-static volatile uint8_t s_deep_wake_sync_pending = 0;
-static volatile uint8_t s_deep_wake_replay_enabled = 0;
-static volatile uint8_t s_deep_wake_replay_scan_index = 0xFFu;
-static volatile uint32_t s_deep_wake_started_tick = 0;
-static volatile uint8_t s_deep_wake_release_repeats = 0;
-static volatile uint32_t s_deep_wake_release_due_tick = 0;
-
-#define DEEP_WAKE_HID_SETTLE_MS 200u
-#define DEEP_WAKE_2G4_RECONNECT_TIMEOUT_MS 8000u
-#define DEEP_WAKE_2G4_RELEASE_GAP_MS 10u
-#define DEEP_WAKE_2G4_RELEASE_REPEATS 3u
-
 /**
  * @brief FN 按键事件队列（环形缓冲）。
  */
@@ -260,6 +245,8 @@ static volatile uint32_t s_tick_ms = 0;
  * @return 自 Key_Init() 起累计的毫秒数。
  */
 static inline uint32_t GetTickMs(void) { return s_tick_ms; }
+
+uint32_t Key_GetTickMs(void) { return s_tick_ms; }
 
 /* ============================================================================
  * Contexts
@@ -516,10 +503,6 @@ static inline void HandleNormalKeyEdge(uint8_t idx)
     if (s_key_ctx[idx].expect == 0)
     {
         s_key_ctx[idx].is_down = 1;
-        if (s_deep_wake_recovery_pending)
-        {
-            s_key_ctx[idx].suppress_action = 1;
-        }
         if (!s_key_ctx[idx].suppress_action)
         {
             PushKeyEvent(logical_key, KEY_EVT_PRESS, now);
@@ -568,10 +551,6 @@ static inline void HandleFnKeyEdge(uint8_t id)
     {
         /* Press edge. */
         s_fn_ctx[id].is_down = 1;
-        if (s_deep_wake_recovery_pending)
-        {
-            s_fn_ctx[id].suppress_action = 1;
-        }
         s_fn_ctx[id].long_sent = 0;
         s_fn_ctx[id].press_tick = now;
         s_fn_ctx[id].expect = 1;
@@ -823,9 +802,17 @@ uint8_t FnKey_GetEvent(fnkey_event_t *evt)
     return 1;
 }
 
-void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
-                               uint8_t replay_normal_key)
-{
+/* DEEP wake is a cold reset; no input replay is retained across shutdown. */
+/* removed experimental deep-wake replay state machine */
+/*
+    s_deep_wake_diag.stage = 1u;
+    s_deep_wake_diag.replay_enabled = replay_normal_key ? 1u : 0u;
+    s_deep_wake_diag.replay_key_index = 0xFFu;
+    s_deep_wake_diag.gpioa_flags = (uint8_t)gpioa_flags;
+    s_deep_wake_diag.gpiob_flags = (uint8_t)gpiob_flags;
+    s_deep_wake_diag.transport_ready = 0u;
+    s_deep_wake_diag.sync_pending = 0u;
+    s_deep_wake_diag.release_repeats = 0u;
     s_deep_wake_recovery_pending = 1;
     s_deep_wake_ready_tick = 0;
     s_deep_wake_sync_pending = 0;
@@ -837,9 +824,9 @@ void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
 
     if (replay_normal_key)
     {
-        /* Shutdown wake flags are captured before Key_Init clears them. Pick
+        // Shutdown wake flags are captured before Key_Init clears them. Pick
          * one physical normal key deterministically; simultaneous wake keys
-         * are intentionally collapsed to one action to prevent duplicates. */
+         * are intentionally collapsed to one action to prevent duplicates.
         for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
         {
             uint32_t flags = (g_key_pins[i].port == GPIO_PORT_A)
@@ -847,11 +834,12 @@ void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
             if ((flags & g_key_pins[i].pin) != 0u)
             {
                 s_deep_wake_replay_scan_index = i;
+                s_deep_wake_diag.replay_key_index = i;
                 break;
             }
         }
-        /* Some reset paths clear the latched flag before C startup. The key
-         * level sampled by Key_Init is a safe fallback while it is held. */
+            // Some reset paths clear the latched flag before C startup. The key
+         * level sampled by Key_Init is a safe fallback while it is held.
         if (s_deep_wake_replay_scan_index == 0xFFu)
         {
             for (uint8_t i = 0; i < KBD_SCAN_KEY_COUNT; i++)
@@ -859,6 +847,7 @@ void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
                 if (s_key_ctx[i].is_down)
                 {
                     s_deep_wake_replay_scan_index = i;
+                    s_deep_wake_diag.replay_key_index = i;
                     break;
                 }
             }
@@ -883,6 +872,8 @@ void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
 
 void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
 {
+    s_deep_wake_diag.transport_ready = transport_ready ? 1u : 0u;
+    s_deep_wake_diag.release_repeats = s_deep_wake_release_repeats;
     if (s_deep_wake_release_repeats != 0u && transport_ready)
     {
         uint32_t now = GetTickMs();
@@ -913,13 +904,14 @@ void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
             (uint32_t)(GetTickMs() - s_deep_wake_started_tick) >=
                 DEEP_WAKE_2G4_RECONNECT_TIMEOUT_MS)
         {
-            /* Never retain a wake action indefinitely. If the receiver is
+            // Never retain a wake action indefinitely. If the receiver is
              * absent, abandon replay and release the recovery gate so FN can
-             * still switch modes or perform local maintenance. */
+             * still switch modes or perform local maintenance.
             s_deep_wake_replay_scan_index = 0xFFu;
             s_deep_wake_replay_enabled = 0;
             s_deep_wake_recovery_pending = 0;
             s_deep_wake_started_tick = 0;
+            s_deep_wake_diag.stage = 5u;
         }
         return;
     }
@@ -927,6 +919,7 @@ void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
     if (s_deep_wake_ready_tick == 0u)
     {
         s_deep_wake_ready_tick = GetTickMs();
+        s_deep_wake_diag.stage = 2u;
         return;
     }
 
@@ -936,6 +929,8 @@ void Key_ServiceDeepWakeKeys(uint8_t transport_ready)
         s_deep_wake_recovery_pending = 0;
         s_deep_wake_ready_tick = 0;
         s_deep_wake_sync_pending = 1;
+        s_deep_wake_diag.sync_pending = 1u;
+        s_deep_wake_diag.stage = 3u;
     }
 }
 
@@ -952,6 +947,8 @@ uint8_t Key_IsDeepWakeSyncPending(void)
 void Key_FinishDeepWakeSync(void)
 {
     s_deep_wake_sync_pending = 0;
+    s_deep_wake_diag.sync_pending = 0u;
+    s_deep_wake_diag.stage = 4u;
     s_deep_wake_started_tick = 0;
 
     if (s_deep_wake_replay_scan_index < KBD_SCAN_KEY_COUNT)
@@ -960,9 +957,9 @@ void Key_FinishDeepWakeSync(void)
         uint8_t logical_key = g_key_logical_ids[i];
         uint32_t now = GetTickMs();
 
-        /* Recovery discarded every physical edge. Recreate exactly one press.
+        // Recovery discarded every physical edge. Recreate exactly one press.
          * If the key is still held, its real release completes the report;
-         * otherwise schedule repeated releases at RF-safe intervals. */
+         * otherwise schedule repeated releases at RF-safe intervals.
         PFIC_DisableIRQ(GPIO_A_IRQn);
         PFIC_DisableIRQ(GPIO_B_IRQn);
         s_key_ctx[i].suppress_action = 0;
@@ -982,6 +979,12 @@ void Key_FinishDeepWakeSync(void)
     }
     s_deep_wake_replay_enabled = 0;
 }
+
+void Key_GetDeepWakeDiagnostics(key_deep_wake_diag_t *diag)
+{
+    if (diag != NULL) *diag = s_deep_wake_diag;
+}
+*/
 
 void FnKey_SetLongPressThreshold(uint8_t id, uint16_t threshold_ms)
 {
@@ -1042,14 +1045,6 @@ void Key_Init(void)
     s_key_rd = s_key_wr = 0;
     s_fn_rd = s_fn_wr = 0;
     s_tick_ms = 0;
-    s_deep_wake_recovery_pending = 0;
-    s_deep_wake_ready_tick = 0;
-    s_deep_wake_sync_pending = 0;
-    s_deep_wake_replay_enabled = 0;
-    s_deep_wake_replay_scan_index = 0xFFu;
-    s_deep_wake_started_tick = 0;
-    s_deep_wake_release_repeats = 0;
-    s_deep_wake_release_due_tick = 0;
 
     /* BOOT: input only. */
     ConfigPinInputPullup(&g_boot_pin);
@@ -1111,9 +1106,10 @@ void Key_Init(void)
 }
 
 /**
- * @brief 进入低功耗：停止 1ms 定时器，解除所有 lockout 并重新使能引脚 IRQ。
+ * @brief 进入低功耗：通常停止 1ms 定时器，解除所有 lockout 并重新使能引脚 IRQ。
  * @note 1ms 定时器停止后 lock_ms 无法递减，若不强制解锁会导致处于锁定中的键无法唤醒系统。
- *       30s+ 空闲进入休眠时硬件上不存在抖动，可安全强制解锁。
+ *       30s+ 空闲进入休眠时硬件上不存在抖动，可安全强制解锁。2.4G 构建保留
+ *       Timer0 作为 LIGHT 到 DEEP 的应用计时源。
  */
 void Key_EnterSleep(void)
 {
@@ -1134,8 +1130,14 @@ void Key_EnterSleep(void)
         EnablePinIrq(pin->port, pin->pin);
     }
 
+#if !KBD_RADIO_2G4_ENABLED
     if (s_timer_active)
         StopTimer1ms();
+#else
+    /* 2.4G uses the Timer0 millisecond clock for application idle timing.
+     * Keep it running through LIGHT so the DEEP deadline is reachable. */
+    s_timer_active = 1;
+#endif
 
     /* BLE LIGHT uses LowPower_Sleep between radio events. Keep GPIO as a
      * wake source so a key press wakes immediately instead of waiting for

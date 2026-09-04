@@ -27,7 +27,6 @@ set_property(CACHE KEYBOARD PROPERTY STRINGS 5KEY KNOB)
 set(KBD_NAME_PREFIX "BinaryKeyboard" CACHE STRING "Keyboard name prefix")
 set(KBD_MODEL "AUTO" CACHE STRING "Keyboard model suffix for device name (AUTO uses KEYBOARD)")
 set(KBD_DEVICE_NAME_OVERRIDE "" CACHE STRING "Override full USB/BLE device name, empty means auto compose")
-option(KBD_SLEEP_TEST_MODE "Enable visible idle/sleep timing indicators" OFF)
 option(KBD_RADIO_2G4_ENABLED "Enable validated CH592F RF FAST backend" OFF)
 option(KBD_RECEIVER_BUILD "Build the CH592F 2.4G USB receiver" OFF)
 option(KBD_RECEIVER_USB_DIAGNOSTIC "Build receiver with USB only for hardware diagnosis" OFF)
@@ -312,12 +311,6 @@ elseif(KBD_RADIO_2G4_ENABLED)
     list(APPEND CH592_COMPILE_DEFINITIONS
         KBD_USB_INPUT_INTERVAL=0x0A
         USB_PID=0x2107
-    )
-endif()
-
-if(KBD_SLEEP_TEST_MODE)
-    list(APPEND CH592_COMPILE_DEFINITIONS
-        KBD_SLEEP_TEST_MODE=1
     )
 endif()
 

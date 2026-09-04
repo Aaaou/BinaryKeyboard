@@ -167,6 +167,20 @@ describe('SYS_STATUS response parsing', () => {
   });
 });
 
+describe('LAYER_GET sleep diagnostics', () => {
+  it('keeps the legacy four-byte response unchanged', () => {
+    const frame = new Uint8Array(64);
+    frame[0] = Command.LAYER_GET;
+    frame[2] = 4;
+    frame.set([ResponseCode.OK, 0, 4, 0], 3);
+
+    const parsed = parseReceiveFrame(frame).parsed;
+    expect(parsed).toContain('当前层=1, 层数=4, 默认层=1');
+    expect(parsed).not.toContain('休眠诊断');
+  });
+
+});
+
 describe('RADIO_PAIR_STATUS diagnostics', () => {
   it('prints receiver RF-to-USB HID counters', () => {
     const frame = new Uint8Array(64);

@@ -191,6 +191,9 @@ typedef struct {
  */
 void Key_Init(void);
 
+/** @brief 获取按键定时器提供的毫秒计数。 */
+uint32_t Key_GetTickMs(void);
+
 /**
  * @brief 读取一个普通按键事件（出队）。
  * @param[out] evt 事件输出指针（不可为 NULL）。
@@ -200,27 +203,6 @@ void Key_Init(void);
  * - 队列满时 PRESS 会被丢弃；RELEASE 会丢弃最旧事件后入队
  */
 uint8_t Key_GetEvent(key_event_t *evt);
-
-/**
- * @brief 开始 DEEP 唤醒恢复阶段。
- * @param replay_normal_key 非零时在安全 HID 同步完成后回放一个普通唤醒键
- * @details 重连期间的输入不会直接执行。2.4G 可以选择在链路确认并同步全零
- *          报告后，可靠回放一个用于唤醒的普通键；FN 和旋钮不会回放。
- */
-void Key_BeginDeepWakeRecovery(uint32_t gpioa_flags, uint32_t gpiob_flags,
-                               uint8_t replay_normal_key);
-
-/** @brief HID 恢复时结束深睡事件缓冲阶段。 */
-void Key_ServiceDeepWakeKeys(uint8_t transport_ready);
-
-/** @brief 深睡唤醒事件是否仍在等待 HID 连接恢复。 */
-uint8_t Key_IsDeepWakeRecoveryPending(void);
-
-/** @brief HID 就绪后是否需要丢弃恢复期事件并同步全零键盘报告。 */
-uint8_t Key_IsDeepWakeSyncPending(void);
-
-/** @brief 全零键盘报告成功同步后结束 DEEP 恢复阶段。 */
-void Key_FinishDeepWakeSync(void);
 
 /**
  * @brief 查询普通按键当前是否处于按下状态。

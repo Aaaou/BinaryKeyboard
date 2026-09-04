@@ -461,7 +461,6 @@ export interface RgbConfig {
   lightSleepMin?: number; /**< LIGHT 休眠时间（分钟，0=禁用） */
   deepSleepMin?: number; /**< DEEP 延时（在 LIGHT 后，分钟，0=禁用） */
   seamlessWakeEnabled?: boolean; /**< LIGHT 唤醒首键透传 */
-  deepSeamlessWake2g4Enabled?: boolean; /**< 2.4G DEEP 重连后回放唤醒首键 */
   pollRate?: number; /**< USB HID 轮询率 bInterval (1=1000Hz, 2=500Hz, 5=200Hz, 10=100Hz) */
 }
 

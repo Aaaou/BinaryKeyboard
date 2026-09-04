@@ -531,7 +531,7 @@ static void HandleLayerGet(const kbd_cmd_frame_t *frame)
 {
   kbd_keymap_t *keymap = KBD_GetKeymap();
 
-  uint8_t resp[4];
+  uint8_t resp[29];
   resp[0] = KBD_RESP_OK;
   resp[1] = keymap->current_layer;
   resp[2] = keymap->num_layers;
@@ -580,7 +580,7 @@ static void HandleRgbGet(const kbd_cmd_frame_t *frame)
   kbd_rgb_config_t *rgb = KBD_GetRgbConfig();
   kbd_system_config_t *sys = KBD_GetSystemConfig();
 
-  uint8_t resp[15];
+  uint8_t resp[14];
   resp[0] = KBD_RESP_OK;
   resp[1] = rgb->enabled;
   resp[2] = rgb->mode;
@@ -595,10 +595,7 @@ static void HandleRgbGet(const kbd_cmd_frame_t *frame)
   resp[11] = sys->auto_sleep_min;
   resp[12] = sys->deep_sleep_min;
   resp[13] = (sys->seamless_wake != KBD_SEAMLESS_WAKE_DISABLED) ? 1u : 0u;
-  resp[14] =
-      (sys->deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_DISABLED) ? 1u : 0u;
-
-  KBD_Command_SendResponse(KBD_CMD_RGB_GET, 0, resp, 15);
+  KBD_Command_SendResponse(KBD_CMD_RGB_GET, 0, resp, 14);
 }
 
 /**
@@ -645,12 +642,6 @@ static void HandleRgbSet(const kbd_cmd_frame_t *frame)
     sys->seamless_wake = frame->data[12]
                              ? KBD_SEAMLESS_WAKE_ENABLED
                              : KBD_SEAMLESS_WAKE_DISABLED;
-  }
-  if (frame->len >= 14u)
-  {
-    sys->deep_seamless_wake_2g4 = frame->data[13]
-                                          ? KBD_SEAMLESS_WAKE_ENABLED
-                                          : KBD_SEAMLESS_WAKE_DISABLED;
   }
 
   KBD_RGB_SetMode((kbd_rgb_mode_t)rgb->mode);
@@ -845,7 +836,7 @@ static void HandleFnkeySet(const kbd_cmd_frame_t *frame)
  */
 static void HandleBattery(const kbd_cmd_frame_t *frame)
 {
-  uint8_t resp[8];
+  uint8_t resp[33];
   KBD_Battery_EnsureSample();
   uint16_t mv = KBD_Battery_GetVoltage_mV();
   uint16_t adc_raw = KBD_Battery_GetAdcRaw();

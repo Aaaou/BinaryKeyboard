@@ -115,7 +115,6 @@ CH592F 无线款使用 BinaryKeyboard Studio 配置键位、FN、RGB、系统模
 - LIGHT 休眠分钟数
 - DEEP 延时分钟数
 - LIGHT 无感唤醒
-- 2.4G DEEP 无感唤醒（仅支持该扩展字段的 2.4G 键盘或接收器显示）
 
 设置改变后自动保存。RGB 总开关只关闭按键灯，状态指示灯和层提示仍保留。默认 LIGHT 为 1 分钟，DEEP 为 LIGHT 后再 1 分钟；填 `0` 可禁用对应阶段。通过接收器连接时，这些设置使用现有 `RGB_GET/RGB_SET` 管理事务透传到键盘，保存位置仍是键盘 DataFlash。
 

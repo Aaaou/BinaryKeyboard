@@ -194,6 +194,26 @@ function hex(n: number): string {
   return "0x" + n.toString(16).padStart(2, "0").toUpperCase();
 }
 
+function formatSleepDiagnostics(data: Uint8Array, markerOffset: number): string {
+  const pmNames = ['ACTIVE', 'LIGHT', 'DEEP'];
+  const pm = pmNames[data[markerOffset + 1]] ?? `未知(${data[markerOffset + 1]})`;
+  const flags = data[markerOffset + 2];
+  const blockers: string[] = [];
+  if (flags & 0x01) blockers.push('低功耗关闭');
+  if (flags & 0x02) blockers.push('充电');
+  if (flags & 0x04) blockers.push('USB已配置');
+  if (flags & 0x08) blockers.push('FN按住');
+  if (flags & 0x10) blockers.push('待唤醒');
+  const readU32 = (offset: number) => (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+  let result = ` | 休眠诊断 PM=${pm} 空闲=${readU32(markerOffset + 3)}ms LIGHT=${data[markerOffset + 7]}min DEEP=${data[markerOffset + 8]}min 阻塞=${blockers.length ? blockers.join('+') : '无'} RTC=${readU32(markerOffset + 9)} LAST=${readU32(markerOffset + 13)}`;
+  if (data.length >= markerOffset + 25) {
+    const stageNames = ['无', '唤醒开始', '链路就绪', '等待全零同步', '回放完成', '回放超时'];
+    const stage = stageNames[data[markerOffset + 17]] ?? `未知(${data[markerOffset + 17]})`;
+    result += ` 唤醒=${stage} 回放开关=${data[markerOffset + 18] ? '开' : '关'} 键索引=${data[markerOffset + 19]} GPIOA=0x${data[markerOffset + 20].toString(16).padStart(2, '0')} GPIOB=0x${data[markerOffset + 21].toString(16).padStart(2, '0')} 链路就绪=${data[markerOffset + 22] ? '是' : '否'} 同步=${data[markerOffset + 23] ? '待完成' : '完成'} 释放重试=${data[markerOffset + 24]}`;
+  }
+  return result;
+}
+
 /** 格式化按键动作 */
 function formatKeyAction(
   type: number,
@@ -327,7 +347,6 @@ export function parseSendFrame(frame: Uint8Array): {
           PRESS_EFFECT_NAMES[data[9] ?? PressEffect.NONE] || `未知(${data[9]})`;
         parsed += ` | ${enabled}, 模式=${mode}, 亮度=${brightness}%, 颜色=#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}, 按键附魔=${press}`;
         if (len >= 13) parsed += `, LIGHT无感=${data[12] ? "开" : "关"}`;
-        if (len >= 14) parsed += `, 2.4G-DEEP无感=${data[13] ? "开" : "关"}`;
       }
       break;
 
@@ -590,7 +609,6 @@ export function parseReceiveFrame(frame: Uint8Array, context?: { receiverRole?: 
           `未知(${data[10]})`;
         parsed += ` | ${enabled}, ${mode}, 亮度=${brightness}%, #${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}, ${indicator}, 按键附魔=${press}`;
         if (len >= 14) parsed += `, LIGHT无感=${data[13] ? "开" : "关"}`;
-        if (len >= 15) parsed += `, 2.4G-DEEP无感=${data[14] ? "开" : "关"}`;
       }
       break;
 
@@ -625,12 +643,16 @@ export function parseReceiveFrame(frame: Uint8Array, context?: { receiverRole?: 
           const chargePinRaw = data[7];
           parsed += ` | ADC原始值 ${adcRaw} | CHRG原始值 ${chargePinRaw}`;
         }
+        if (len >= 33 && data[8] === 0xd2) {
+        }
       }
       break;
 
     case Command.LAYER_GET:
       if (len >= 4) {
         parsed += ` | 当前层=${data[1] + 1}, 层数=${data[2]}, 默认层=${data[3] + 1}`;
+        if (len >= 29 && data[4] === 0xd2) {
+        }
       }
       break;
   }

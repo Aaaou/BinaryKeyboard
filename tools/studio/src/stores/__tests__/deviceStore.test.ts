@@ -155,4 +155,27 @@ describe("device store remote layer polling", () => {
     expect(store.currentEditLayer).toBe(0);
     expect(store.hasChanges).toBe(true);
   });
+
+  it("keeps a manually selected edit layer while polling the current device layer", async () => {
+    const store = prepareRemoteStore();
+    store.deviceStatus = status(1);
+    store.keymap.currentLayer = 1;
+    store.keymapOriginal.currentLayer = 1;
+    store.setEditLayer(0);
+
+    mocks.hidService.getLayerState.mockResolvedValue({
+      currentLayer: 1,
+      numLayers: 4,
+      defaultLayer: 0,
+    });
+    store.startStatusPolling();
+    await vi.advanceTimersByTimeAsync(2000);
+    store.stopStatusPolling();
+
+    expect(store.deviceStatus?.currentLayer).toBe(1);
+    expect(store.keymap.currentLayer).toBe(1);
+    expect(store.keymapOriginal.currentLayer).toBe(1);
+    expect(store.currentEditLayer).toBe(0);
+    expect(store.hasChanges).toBe(false);
+  });
 });

@@ -137,9 +137,6 @@ extern "C"
  * 仅测试固件开启：空闲每 10 秒让指示灯短闪一次，进入 LIGHT 时仍执行
  * 正式的休眠提示动画。发布构建保持关闭，避免增加灯光和功耗。
  */
-#ifndef KBD_SLEEP_TEST_MODE
-#define KBD_SLEEP_TEST_MODE 0
-#endif
 
 #ifndef KBD_SLEEP_TEST_FLASH_INTERVAL_MS
 #define KBD_SLEEP_TEST_FLASH_INTERVAL_MS 10000u

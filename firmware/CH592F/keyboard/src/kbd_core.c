@@ -103,24 +103,6 @@ void KBD_Core_Process(void)
 {
     key_event_t key_evt;
 
-    Key_ServiceDeepWakeKeys(KBD_Mode_IsInputReady() ? 1u : 0u);
-    if (Key_IsDeepWakeRecoveryPending())
-    {
-        DiscardQueuedInput();
-        return;
-    }
-
-    if (Key_IsDeepWakeSyncPending())
-    {
-        DiscardQueuedInput();
-        ResetInputState();
-        if (TrySyncKeyboardReport())
-        {
-            Key_FinishDeepWakeSync();
-        }
-        return;
-    }
-
     if (!KBD_Mode_IsInputReady())
     {
         /* Transport readiness only gates HID reports. Local FN controls must

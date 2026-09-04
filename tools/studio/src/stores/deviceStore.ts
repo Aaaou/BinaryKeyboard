@@ -127,6 +127,8 @@ export const useDeviceStore = defineStore("device", () => {
   function applyRuntimeLayer(layerIndex: number): void {
     const maxLayers = Math.max(1, keymap.value.numLayers);
     const nextLayer = Math.min(Math.max(layerIndex, 0), maxLayers - 1);
+    const previousRuntimeLayer = keymap.value.currentLayer;
+    const wasEditingRuntimeLayer = currentEditLayer.value === previousRuntimeLayer;
     const hadConfigChanges = keymapConfigChanged(
       keymap.value,
       keymapOriginal.value,
@@ -141,10 +143,10 @@ export const useDeviceStore = defineStore("device", () => {
     keymap.value.currentLayer = nextLayer;
     keymapOriginal.value.currentLayer = nextLayer;
 
-    // Follow a physical layer switch while the editor is clean. If the user
-    // is editing a mapping, retain that editing context and only update the
-    // live-layer indicator.
-    if (!hadConfigChanges) {
+    // Follow a physical layer switch only when the editor was showing the
+    // previous live layer. A manually selected layer is an independent edit
+    // context even before the user changes any mapping on it.
+    if (!hadConfigChanges && wasEditingRuntimeLayer) {
       currentEditLayer.value = nextLayer;
     }
   }

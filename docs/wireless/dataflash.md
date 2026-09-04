@@ -70,7 +70,6 @@ CH592F 提供 32KB DataFlash，偏移范围为 `0x0000`～`0x7FFF`。
 | `0x104` | `deep_sleep_min` | LIGHT 后到 DEEP 的分钟数，0=禁用 |
 | `0x105` | `os_mode` | 0=Win，1=Mac |
 | `0x106` | `seamless_wake` | LIGHT 首键是否正常执行，使用 `0xA5/0x5A` 标记 |
-| `0x107` | `deep_seamless_wake_2g4` | 2.4G DEEP 重连后是否回放唤醒首键，使用 `0xA5/0x5A` 标记 |
 | `0x108`～`0x13F` | `reserved` | 56B 保留 |
 
 Studio 的 CH592 RGB 读写帧会把休眠时间和两个无感唤醒开关附带在 RGB 配置后面传输，但它们实际持久化在 system 结构中。结构总长仍为 64B；旧配置的 `0x107` 是保留字节，非有效标记值按默认开启迁移，不重置其他配置。

@@ -79,6 +79,9 @@ static bool KBD_Mode_USB_HasProtocolHandshake(void);
 static void KBD_Mode_PlaySleepEntryAnimation(void);
 #if KBD_SLEEP_TEST_MODE
 static void KBD_Mode_RunSleepTestIndicator(void);
+#if KBD_RADIO_2G4_ENABLED
+static void KBD_Mode_Play2G4SleepTestBootAnimation(void);
+#endif
 #endif
 static kbd_state_t KBD_Mode_ResolveIndicatorState(void);
 static void KBD_Mode_RefreshIndicatorState(void);
@@ -159,6 +162,12 @@ int KBD_Mode_Init(kbd_work_mode_t initial_mode, kbd_mode_callbacks_t *pCBs)
             USB_Device_Init();
         }
     }
+
+#if KBD_SLEEP_TEST_MODE && KBD_RADIO_2G4_ENABLED
+    /* Make a diagnostic image unmistakable before starting its idle clock. */
+    KBD_Mode_Play2G4SleepTestBootAnimation();
+    KBD_Mode_RecordActivityInternal();
+#endif
 
     return 0;
 }
@@ -496,7 +505,9 @@ int KBD_Mode_SendKeyboardReport(uint8_t modifier, uint8_t *keys, uint8_t key_cou
         return -1;
     }
 
+#if !KBD_RADIO_2G4_ENABLED
     KBD_Mode_RecordActivityInternal();
+#endif
     uint8_t report_modifier = KBD_Mode_ApplyOsModeModifier(modifier);
 
     /* 构建报告 */
@@ -564,8 +575,9 @@ int KBD_Mode_SendMouseReport(uint8_t buttons, int8_t x, int8_t y, int8_t wheel)
         return -1;
     }
 
+#if !KBD_RADIO_2G4_ENABLED
     KBD_Mode_RecordActivityInternal();
-
+#endif
     if (g_current_mode == KBD_WORK_MODE_USB)
     {
         if (buttons != g_mouse_report[0])
@@ -606,8 +618,9 @@ int KBD_Mode_SendConsumerReport(uint16_t key)
         return -1;
     }
 
+#if !KBD_RADIO_2G4_ENABLED
     KBD_Mode_RecordActivityInternal();
-
+#endif
     if (g_current_mode == KBD_WORK_MODE_USB)
     {
         if (key != 0)
@@ -901,7 +914,14 @@ static void KBD_Mode_BLE_LedCallback(uint8_t leds)
 
 static uint32_t KBD_Mode_GetNow(void)
 {
+#if KBD_RADIO_2G4_ENABLED
+    /* RF FAST owns a separate RTC implementation whose counter is not a
+     * reliable application idle clock in the keyboard image. Timer0 is
+     * already required for key debounce and remains active while awake. */
+    return Key_GetTickMs();
+#else
     return RTC_GetCycle32k();
+#endif
 }
 
 static void KBD_Mode_RecordActivityInternal(void)
@@ -915,6 +935,9 @@ static void KBD_Mode_RecordActivityInternal(void)
 static uint32_t KBD_Mode_GetIdleMs(void)
 {
     uint32_t now = KBD_Mode_GetNow();
+#if KBD_RADIO_2G4_ENABLED
+    return (uint32_t)(now - g_last_activity_tick);
+#else
     uint32_t elapsed;
 
     if (now >= g_last_activity_tick)
@@ -928,6 +951,7 @@ static uint32_t KBD_Mode_GetIdleMs(void)
     }
 
     return (uint32_t)(((uint64_t)elapsed * 1000u + (KBD_RTC_FREQ_HZ / 2u)) / KBD_RTC_FREQ_HZ);
+#endif
 }
 
 static uint32_t KBD_Mode_GetLightSleepTimeoutMs(void)
@@ -1035,6 +1059,25 @@ static void KBD_Mode_PlaySleepEntryAnimation(void)
 }
 
 #if KBD_SLEEP_TEST_MODE
+#if KBD_RADIO_2G4_ENABLED
+static void KBD_Mode_Play2G4SleepTestBootAnimation(void)
+{
+    for (uint8_t i = 0; i < 3u; i++)
+    {
+        WS2812_FillKeys(0, 0, 0);
+        WS2812_Set_Indicator(180, 0, 255);
+        WS2812_Update();
+        mDelaymS(180u);
+        WS2812_Clear_Indicator();
+        WS2812_Update();
+        if (i < 2u)
+        {
+            mDelaymS(120u);
+        }
+    }
+}
+#endif
+
 /**
  * 测试固件的无串口休眠进度提示。
  * 只读空闲计时，不调用 RecordActivity，因此不会改变真实休眠计时。

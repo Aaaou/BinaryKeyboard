@@ -103,9 +103,6 @@ function validateConfigBackupShape(backup: ConfigBackupFile): void {
     if (rgb.seamlessWakeEnabled !== undefined && typeof rgb.seamlessWakeEnabled !== 'boolean') {
       errors.push('无感唤醒配置无效');
     }
-    if (rgb.deepSeamlessWake2g4Enabled !== undefined && typeof rgb.deepSeamlessWake2g4Enabled !== 'boolean') {
-      errors.push('2.4G DEEP 无感唤醒配置无效');
-    }
   }
 
   const fnConfig = backup.config?.fnKeys;

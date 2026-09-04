@@ -268,7 +268,6 @@ static const kbd_system_config_t s_default_system = {
     .deep_sleep_min = 1,        /* DEEP 默认在 LIGHT 后 1 分钟 */
     .os_mode = KBD_OS_MODE_WIN, /* 默认 Win 模式 */
     .seamless_wake = KBD_SEAMLESS_WAKE_ENABLED,
-    .deep_seamless_wake_2g4 = KBD_SEAMLESS_WAKE_ENABLED,
 };
 
 /*============================================================================*/
@@ -620,12 +619,6 @@ static void ApplyLoadedConfig(const kbd_config_slot_cache_t *cfg) {
      * the new default without forcing a layout-version reset. */
     s_system_config.seamless_wake = KBD_SEAMLESS_WAKE_ENABLED;
   }
-  if (s_system_config.deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_ENABLED &&
-      s_system_config.deep_seamless_wake_2g4 != KBD_SEAMLESS_WAKE_DISABLED) {
-    /* This byte was reserved in legacy slots. Keep the 64-byte layout and
-     * migrate only this field instead of invalidating the complete profile. */
-    s_system_config.deep_seamless_wake_2g4 = KBD_SEAMLESS_WAKE_ENABLED;
-  }
   memcpy(&s_keymap_config, &cfg->keymap, sizeof(s_keymap_config));
   memcpy(&s_fnkey_config, &cfg->fnkey, sizeof(s_fnkey_config));
   memcpy(&s_rgb_config, &cfg->rgb, sizeof(s_rgb_config));
@@ -742,13 +735,13 @@ int KBD_Storage_Init(void) {
     }
   }
 
-  LOG_I(TAG, "Effective config: fn1_click=0x%02X fn1_long=0x%02X sleep=%u/%u seamless=%u deep2g4=%u",
+  LOG_I(TAG, "Effective config: fn1_click=0x%02X fn1_long=0x%02X sleep=%u/%u seamless=%u",
         s_fnkey_config.fn[0].click_action,
         s_fnkey_config.fn[0].long_action,
         s_system_config.auto_sleep_min,
         s_system_config.deep_sleep_min,
         s_system_config.seamless_wake == KBD_SEAMLESS_WAKE_ENABLED ? 1u : 0u,
-        s_system_config.deep_seamless_wake_2g4 == KBD_SEAMLESS_WAKE_ENABLED ? 1u : 0u);
+        0u);
 
   return 0;
 }
