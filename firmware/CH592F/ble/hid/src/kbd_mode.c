@@ -297,7 +297,8 @@ int KBD_Mode_Switch(kbd_work_mode_t mode)
         return -1;
     }
 
-    if (mode == KBD_WORK_MODE_2G4 && !KBD_Radio2G4_IsEnabled()) return -2;
+    if (mode == KBD_WORK_MODE_2G4 &&
+        !(KBD_Radio2G4_IsEnabled() || KBD_TRIMODE_ENABLED)) return -2;
     if (mode == g_current_mode)
     {
         return 0;
@@ -332,7 +333,9 @@ int KBD_Mode_Toggle(void)
 {
     kbd_work_mode_t new_mode;
     if (g_current_mode == KBD_WORK_MODE_USB) new_mode = KBD_WORK_MODE_BLE;
-    else if (g_current_mode == KBD_WORK_MODE_BLE && KBD_Radio2G4_IsEnabled()) new_mode = KBD_WORK_MODE_2G4;
+    else if (g_current_mode == KBD_WORK_MODE_BLE &&
+             (KBD_Radio2G4_IsEnabled() || KBD_TRIMODE_ENABLED))
+        new_mode = KBD_WORK_MODE_2G4;
     else new_mode = KBD_WORK_MODE_USB;
     return KBD_Mode_Switch(new_mode);
 }

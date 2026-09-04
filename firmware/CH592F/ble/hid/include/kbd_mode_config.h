@@ -55,6 +55,12 @@ extern "C"
 #ifndef KBD_RADIO_2G4_ENABLED
 #define KBD_RADIO_2G4_ENABLED 0
 #endif
+#ifndef KBD_TRIMODE_ENABLED
+#define KBD_TRIMODE_ENABLED 0
+#endif
+#ifndef KBD_TRIMODE_IMAGE
+#define KBD_TRIMODE_IMAGE 0
+#endif
 
 #ifndef KBD_RECEIVER_BUILD
 #define KBD_RECEIVER_BUILD 0
