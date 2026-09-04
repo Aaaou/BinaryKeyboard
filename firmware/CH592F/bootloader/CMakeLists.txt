@@ -7,6 +7,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(CH592F_IAP C ASM)
 
+option(KBD_TRIMODE_DISPATCHER "Build the trimode image dispatcher" OFF)
+
 set(TARGET_ELF ${PROJECT_NAME}.elf)
 
 set(BOOTLOADER_SOURCES
@@ -27,6 +29,9 @@ target_include_directories(${TARGET_ELF} PRIVATE
 target_compile_definitions(${TARGET_ELF} PRIVATE
     FREQ_SYS=60000000
 )
+if(KBD_TRIMODE_DISPATCHER)
+    target_compile_definitions(${TARGET_ELF} PRIVATE KBD_TRIMODE_DISPATCHER=1)
+endif()
 
 target_compile_options(${TARGET_ELF} PRIVATE
     $<$<COMPILE_LANGUAGE:C>:-std=gnu99 -Wall -Os>
