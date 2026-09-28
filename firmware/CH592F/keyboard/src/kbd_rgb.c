@@ -669,20 +669,6 @@ void KBD_RGB_Process(void)
         s_state_elapsed_ms += RGB_UPDATE_INTERVAL_MS;
     }
 
-    /* This PB15 RGB_EN hardware variant treats the web RGB switch as a true
-     * master power switch. Suppress status/transient effects as well as key
-     * lighting so WS2812_Update() can drive RGB_EN low immediately. */
-    if (!cfg->enabled)
-    {
-        s_flash_active = false;
-        s_flash_remain = 0;
-        s_layer_flash_active = false;
-        ClearPressEffects();
-        WS2812_Fill(0, 0, 0);
-        WS2812_Update();
-        return;
-    }
-
     /* 处理临时闪烁 */
     if (s_flash_active)
     {
@@ -758,45 +744,57 @@ void KBD_RGB_Process(void)
     bool has_active_press =
         (cfg->press_effect != PRESS_EFFECT_NONE) && (s_press_active_count > 0);
 
-    /* 根据模式处理 */
-    switch (cfg->mode)
+    /* RGB 开关关闭时，仅关闭按键灯；指示灯与层指示仍保持 */
+    if (!cfg->enabled)
     {
-    case KBD_RGB_OFF:
-        /* 模式关闭仅关闭按键灯，状态指示仍由总开关控制。 */
         if (WS2812_LED_NUM > 1)
         {
             WS2812_FillKeys(0, 0, 0);
         }
         ProcessIndicatorMode();
-        break;
-
-    case KBD_RGB_STATIC:
-        ProcessStaticMode();
-        break;
-
-    case KBD_RGB_BREATHING:
-        ProcessBreathingMode();
-        break;
-
-    case KBD_RGB_BLINK:
-        ProcessBlinkMode();
-        break;
-
-    case KBD_RGB_RAINBOW:
-        ProcessRainbowMode();
-        break;
-
-    case KBD_RGB_INDICATOR:
-        /* 仅指示灯模式：按键灯全部熄灭 */
-        if (WS2812_LED_NUM > 1)
+    }
+    else
+    {
+        /* 根据模式处理 */
+        switch (cfg->mode)
         {
-            WS2812_FillKeys(0, 0, 0);
-        }
-        ProcessIndicatorMode();
-        break;
+        case KBD_RGB_OFF:
+            /* 仅关闭按键灯，指示灯继续显示状态 */
+            if (WS2812_LED_NUM > 1)
+            {
+                WS2812_FillKeys(0, 0, 0);
+            }
+            ProcessIndicatorMode();
+            break;
 
-    default:
-        break;
+        case KBD_RGB_STATIC:
+            ProcessStaticMode();
+            break;
+
+        case KBD_RGB_BREATHING:
+            ProcessBreathingMode();
+            break;
+
+        case KBD_RGB_BLINK:
+            ProcessBlinkMode();
+            break;
+
+        case KBD_RGB_RAINBOW:
+            ProcessRainbowMode();
+            break;
+
+        case KBD_RGB_INDICATOR:
+            /* 仅指示灯模式：按键灯全部熄灭 */
+            if (WS2812_LED_NUM > 1)
+            {
+                WS2812_FillKeys(0, 0, 0);
+            }
+            ProcessIndicatorMode();
+            break;
+
+        default:
+            break;
+        }
     }
 
     /* 叠加按下效果 */
