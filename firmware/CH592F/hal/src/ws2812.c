@@ -78,7 +78,9 @@ static void WS2812_DisablePower(void) {
 
 static uint8_t WS2812_HasAnyLitPixel(void) {
   for (uint16_t i = 0; i < WS2812_LED_NUM * 24u; i++) {
-    if (ws2812_buf[i] != 0) {
+    /* An encoded black pixel still contains T0H pulses. Only a T1H entry
+     * represents a set colour bit and therefore requires LED power. */
+    if (ws2812_buf[i] == WS2812_T1H) {
       return 1;
     }
   }
