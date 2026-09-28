@@ -89,9 +89,12 @@ typedef struct
 #if defined(KBD_LAYOUT_5KEY)
 #define WS2812_EN_PORT GPIO_PORT_B
 #define WS2812_EN_PIN GPIO_Pin_15
+/* 定制 5KEY：PB15 拉低开启；高阻释放后由外部栅源上拉关闭。 */
+#define WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF 1
 #else
 #define WS2812_EN_PORT GPIO_PORT_A
 #define WS2812_EN_PIN GPIO_Pin_9
+#define WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF 0
 #endif
 #define WS2812_EN_ACTIVE_HIGH 1
 

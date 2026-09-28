@@ -529,8 +529,7 @@ static void HandleRgbSet(const kbd_cmd_frame_t *frame)
   rgb->color_r = frame->data[4];
   rgb->color_g = frame->data[5];
   rgb->color_b = frame->data[6];
-  /* 网页协议 data[7]：状态指示灯开关；不要强制改回常开 */
-  rgb->indicator_enabled = frame->data[7] ? 1u : 0u;
+  rgb->indicator_enabled = 1; /* 指示灯始终启用，不允许用户关闭 */
 
   {
     uint8_t v = frame->data[8];

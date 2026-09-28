@@ -5,7 +5,7 @@
  *
  * 硬件连接：
  *   - PA10: WS2812 数据线 (DIN)
- *   - RGB_EN: 由板级 WS2812_EN_PORT/WS2812_EN_PIN 配置，高电平上电
+ *   - RGB_EN: 由板级配置决定有效电平及关断方式
  *
  * 数据格式：
  *   - 每个 LED 需要 24bit 数据 (GRB 顺序)
@@ -45,6 +45,16 @@ static uint8_t s_rgb_powered = 0;
  */
 
 static void WS2812_EnablePower(void) {
+#if WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF
+  /* 先预置输出锁存器为低，再切换为推挽输出，避免开启瞬间毛刺。 */
+  if (WS2812_EN_PORT == GPIO_PORT_A) {
+    GPIOA_ResetBits(WS2812_EN_PIN);
+    GPIOA_ModeCfg(WS2812_EN_PIN, GPIO_ModeOut_PP_5mA);
+  } else {
+    GPIOB_ResetBits(WS2812_EN_PIN);
+    GPIOB_ModeCfg(WS2812_EN_PIN, GPIO_ModeOut_PP_5mA);
+  }
+#else
 #if WS2812_EN_ACTIVE_HIGH
   if (WS2812_EN_PORT == GPIO_PORT_A) {
     GPIOA_SetBits(WS2812_EN_PIN);
@@ -58,9 +68,19 @@ static void WS2812_EnablePower(void) {
     GPIOB_ResetBits(WS2812_EN_PIN);
   }
 #endif
+#endif
 }
 
 static void WS2812_DisablePower(void) {
+#if WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF
+  /* 不能输出 MCU 高电平：RGB 电源高于 VIO 时仍可能产生负 VGS。
+   * 切换为高阻，由外部 Gate-Source 上拉将 MOS 管可靠关断。 */
+  if (WS2812_EN_PORT == GPIO_PORT_A) {
+    GPIOA_ModeCfg(WS2812_EN_PIN, GPIO_ModeIN_Floating);
+  } else {
+    GPIOB_ModeCfg(WS2812_EN_PIN, GPIO_ModeIN_Floating);
+  }
+#else
 #if WS2812_EN_ACTIVE_HIGH
   if (WS2812_EN_PORT == GPIO_PORT_A) {
     GPIOA_ResetBits(WS2812_EN_PIN);
@@ -73,6 +93,7 @@ static void WS2812_DisablePower(void) {
   } else {
     GPIOB_SetBits(WS2812_EN_PIN);
   }
+#endif
 #endif
 }
 
@@ -109,11 +130,13 @@ static void WS2812_Fill_Byte(uint32_t *p_buf, uint8_t data) {
 void WS2812_Init(void) {
   PWR_UnitModCfg(DISABLE, UNIT_SYS_LSE);
   GPIOA_ModeCfg(WS2812_PIN, GPIO_ModeOut_PP_5mA);
+#if !WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF
   if (WS2812_EN_PORT == GPIO_PORT_A) {
     GPIOA_ModeCfg(WS2812_EN_PIN, GPIO_ModeOut_PP_5mA);
   } else {
     GPIOB_ModeCfg(WS2812_EN_PIN, GPIO_ModeOut_PP_5mA);
   }
+#endif
   WS2812_DisablePower();
   TMR1_Disable();
   TMR1_PWMInit(High_Level, PWM_Times_1);
