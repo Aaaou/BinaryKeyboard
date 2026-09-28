@@ -5,7 +5,7 @@
  *
  * 硬件连接：
  *   - PA10: WS2812 数据线 (DIN)
- *   - PA9 : RGB_EN，高电平给 RGB 电路上电
+ *   - RGB_EN: 由板级 WS2812_EN_PORT/WS2812_EN_PIN 配置，高电平上电
  *
  * 数据格式：
  *   - 每个 LED 需要 24bit 数据 (GRB 顺序)

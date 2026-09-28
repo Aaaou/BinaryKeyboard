@@ -82,9 +82,17 @@ typedef struct
 #define WS2812_PORT GPIO_PORT_A
 #define WS2812_PIN GPIO_Pin_10
 
-/* WS2812 使能引脚 (PA9), 高电平上电 */
+/*
+ * WS2812 使能引脚，高电平上电。
+ * PB15 是 5KEY 用户定制硬件；KNOB 的 PB15 用于编码器 B 相，必须保留 PA9。
+ */
+#if defined(KBD_LAYOUT_5KEY)
+#define WS2812_EN_PORT GPIO_PORT_B
+#define WS2812_EN_PIN GPIO_Pin_15
+#else
 #define WS2812_EN_PORT GPIO_PORT_A
 #define WS2812_EN_PIN GPIO_Pin_9
+#endif
 #define WS2812_EN_ACTIVE_HIGH 1
 
 /* WS2812 LED 配置：仅指示灯模式 (注释掉则启用按键灯) */
