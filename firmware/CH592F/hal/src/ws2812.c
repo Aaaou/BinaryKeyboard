@@ -99,13 +99,12 @@ static void WS2812_DisablePower(void) {
 
 static uint8_t WS2812_HasAnyLitPixel(void) {
   for (uint16_t i = 0; i < WS2812_LED_NUM * 24u; i++) {
-    if (ws2812_buf[i] != 0) {
+    if (ws2812_buf[i] == WS2812_T1H) {
       return 1;
     }
   }
   return 0;
 }
-
 /**
  * @brief 填充单字节数据到缓冲区 (MSB First)
  * @param p_buf 缓冲区指针 (需要指向8个连续的uint32_t空间)
