@@ -37,6 +37,8 @@ static kbd_action_t s_active_actions[KBD_MAX_KEYS];
 static uint8_t s_active_action_valid[KBD_MAX_KEYS] = {0};
 static uint8_t s_momentary_layer_active[KBD_MAX_KEYS] = {0};
 static uint8_t s_momentary_restore_layer[KBD_MAX_KEYS] = {0};
+/** Latest complete keyboard state has not yet been accepted by the transport. */
+static uint8_t s_keyboard_report_dirty = 1;
 
 static const uint8_t s_modifier_bits[8] = {
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
@@ -56,6 +58,10 @@ static const uint8_t s_mouse_button_bits[5] = {
 
 static void ResetInputState(void);
 static void RebuildKeyboardReport(void);
+static bool TrySyncKeyboardReport(void);
+static void ProcessFnEvents(void);
+static void DiscardQueuedHidInput(void);
+static void DiscardQueuedInput(void);
 static void UpdateKeycodeRefcount(uint8_t keycode, bool pressed);
 static void UpdateModifierMask(uint8_t mask, bool pressed);
 static void UpdateMouseButtons(uint8_t buttons, bool pressed);
@@ -95,21 +101,68 @@ void KBD_Core_Init(void)
 void KBD_Core_Process(void)
 {
     key_event_t key_evt;
-    fnkey_event_t fn_evt;
+
+    Key_ServiceDeepWakeKeys(KBD_Mode_IsInputReady() ? 1u : 0u);
+    if (Key_IsDeepWakeRecoveryPending())
+    {
+        DiscardQueuedInput();
+        return;
+    }
+
+    if (Key_IsDeepWakeSyncPending())
+    {
+        DiscardQueuedInput();
+        ResetInputState();
+        if (TrySyncKeyboardReport())
+        {
+            Key_FinishDeepWakeSync();
+        }
+        return;
+    }
+
+    if (!KBD_Mode_IsInputReady())
+    {
+        /* Transport readiness only gates HID reports. Local FN controls must
+         * remain available so an unplugged USB mode can switch back to BLE. */
+        DiscardQueuedHidInput();
+        ResetInputState();
+        ProcessFnEvents();
+        return;
+    }
+
+    if (!TrySyncKeyboardReport())
+    {
+        return;
+    }
 
     /* 处理普通按键事件 */
     while (Key_GetEvent(&key_evt))
     {
         KBD_Core_HandleKeyEvent(&key_evt);
+        if (!TrySyncKeyboardReport())
+        {
+            return;
+        }
     }
 
     /* 处理旋钮事件 */
     while (Encoder_GetEvent(&key_evt))
     {
         KBD_Core_HandleKeyEvent(&key_evt);
+        if (!TrySyncKeyboardReport())
+        {
+            return;
+        }
     }
 
-    /* 处理 FN 按键事件 */
+    ProcessFnEvents();
+}
+
+static void ProcessFnEvents(void)
+{
+    fnkey_event_t fn_evt;
+
+    /* FN actions are local controls and do not require a ready HID transport. */
     while (FnKey_GetEvent(&fn_evt))
     {
         KBD_Core_HandleFnEvent(&fn_evt);
@@ -209,6 +262,10 @@ void KBD_Core_HandleFnEvent(const fnkey_event_t *evt)
     {
         LOG_D(TAG, "FN%d long", evt->id + 1);
         KBD_Log_FnEvent(evt->id, 1, entry->long_action, entry->long_param);
+        if (entry->long_action == KBD_FN_SLEEP)
+        {
+            KBD_Mode_SuppressWakeForFn(evt->id);
+        }
         ExecuteFnAction((kbd_fn_action_t)entry->long_action, entry->long_param);
     }
     else
@@ -225,7 +282,7 @@ void KBD_Core_HandleFnEvent(const fnkey_event_t *evt)
 void KBD_Core_ReleaseAll(void)
 {
     ResetInputState();
-    KBD_Mode_ReleaseAllKeys();
+    TrySyncKeyboardReport();
     KBD_Mode_SendMouseReport(0, 0, 0, 0);
     KBD_Mode_SendConsumerReport(0);
 }
@@ -336,6 +393,7 @@ static void ResetInputState(void)
     s_pressed_count = 0;
     s_current_modifier = 0;
     s_current_mouse_buttons = 0;
+    s_keyboard_report_dirty = 1;
 }
 
 static void RebuildKeyboardReport(void)
@@ -356,14 +414,55 @@ static void RebuildKeyboardReport(void)
         s_pressed_keys[s_pressed_count++] = s_keycode_slots[i];
     }
 
+    s_keyboard_report_dirty = 1;
+}
+
+static bool TrySyncKeyboardReport(void)
+{
+    int ret;
+
+    if (!s_keyboard_report_dirty)
+    {
+        return true;
+    }
+    if (!KBD_Mode_IsInputReady())
+    {
+        return false;
+    }
+
     if (s_pressed_count > 0 || s_current_modifier != 0)
     {
-        KBD_Mode_SendKeyboardReport(s_current_modifier, s_pressed_keys, s_pressed_count);
+        ret = KBD_Mode_SendKeyboardReport(s_current_modifier,
+                                          s_pressed_keys,
+                                          s_pressed_count);
     }
     else
     {
-        KBD_Mode_ReleaseAllKeys();
+        ret = KBD_Mode_ReleaseAllKeys();
     }
+
+    if (ret == 0)
+    {
+        s_keyboard_report_dirty = 0;
+        return true;
+    }
+    return false;
+}
+
+static void DiscardQueuedHidInput(void)
+{
+    key_event_t key_evt;
+
+    while (Key_GetEvent(&key_evt)) {}
+    while (Encoder_GetEvent(&key_evt)) {}
+}
+
+static void DiscardQueuedInput(void)
+{
+    fnkey_event_t fn_evt;
+
+    DiscardQueuedHidInput();
+    while (FnKey_GetEvent(&fn_evt)) {}
 }
 
 static void UpdateKeycodeRefcount(uint8_t keycode, bool pressed)

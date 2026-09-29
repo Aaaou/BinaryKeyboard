@@ -82,9 +82,20 @@ typedef struct
 #define WS2812_PORT GPIO_PORT_A
 #define WS2812_PIN GPIO_Pin_10
 
-/* WS2812 使能引脚 (PA9), 高电平上电 */
+/*
+ * WS2812 使能引脚，高电平上电。
+ * PB15 是 5KEY 用户定制硬件；KNOB 的 PB15 用于编码器 B 相，必须保留 PA9。
+ */
+#if defined(KBD_LAYOUT_5KEY)
+#define WS2812_EN_PORT GPIO_PORT_B
+#define WS2812_EN_PIN GPIO_Pin_15
+/* 定制 5KEY：PB15 拉低开启；高阻释放后由外部栅源上拉关闭。 */
+#define WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF 1
+#else
 #define WS2812_EN_PORT GPIO_PORT_A
 #define WS2812_EN_PIN GPIO_Pin_9
+#define WS2812_EN_LOW_ACTIVE_HIGH_Z_OFF 0
+#endif
 #define WS2812_EN_ACTIVE_HIGH 1
 
 /* WS2812 LED 配置：仅指示灯模式 (注释掉则启用按键灯) */
@@ -105,8 +116,8 @@ typedef struct
 #define KBD_VBAT_ADC_PIN GPIO_Pin_14
 #define KBD_VBAT_EN_PIN GPIO_Pin_15
 
-/* Diagnostic build: keep the divider enabled so VBAT_AD can be measured. */
-#define KBD_VBAT_DIVIDER_ALWAYS_ON 1
+/* Battery divider is powered only during a requested sample window. */
+#define KBD_VBAT_DIVIDER_ALWAYS_ON 0
 
 /* CH592 VINTA ADC reference and the board's 100K/100K VBAT divider. */
 #define KBD_ADC_VREF_MV 1050u
@@ -234,8 +245,9 @@ typedef struct
 #define KBD_LOGICAL_TO_PHYSICAL_MAP {2, 3, 4, 1, 0}
 #define KBD_LAYER_TO_KEY_MAP {0, 1, 2, 3, 4}
 #elif defined(KBD_LAYOUT_KNOB)
-#define KBD_LOGICAL_TO_PHYSICAL_MAP {3, 2, 0, 1}
-#define KBD_LAYER_TO_KEY_MAP {1, 0, 3, 2}
+/* PCB chain order: swap the K1/K2 and K3/K4 logical pairs. */
+#define KBD_LOGICAL_TO_PHYSICAL_MAP {2, 3, 1, 0}
+#define KBD_LAYER_TO_KEY_MAP {0, 1, 2, 3}
 #endif
 
 /**
